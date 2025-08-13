@@ -1,0 +1,87 @@
+[app]
+name = "チャットボットシステム"
+version = "1.0.0"
+debug = false
+
+[backend]
+host = "0.0.0.0"
+port = 8000
+reload = true
+
+[frontend]
+host = "localhost"
+port = 3000
+
+[cors]
+origins = [ "http://localhost:3000", "http://localhost:5173",]
+
+[qdrant]
+host = "localhost"
+port = 6333
+grpc_port = 6334
+collection_name = "chatbot_knowledge"
+
+
+[llm]
+provider = "カスタム"
+api_base = "https://your-api-base-url.com/v1"
+api_key = "your-api-key-here"
+model_name = "your-model-name"
+temperature = 0.7
+max_tokens = 128000
+top_p = 1.0
+frequency_penalty = 0.0
+presence_penalty = 0.0
+
+[embedding]
+provider = "ollama"
+base_url = "http://localhost:11434"
+model_name = "nomic-embed-text:latest"
+api_key = ""
+# ⚠️ 重要警告: dimensionの値を変更すると既存のベクターデータベースにアクセスできなくなります
+# ⚠️ この値を変更する前に、必ずベクターデータベースのバックアップを作成してください
+# ⚠️ 変更後は、ベクターデータベースを再作成する必要があります
+dimension = 768
+
+[upload]
+directory = "./uploads"
+max_file_size = 10485760
+
+[database]
+host = "localhost"
+port = 3306
+username = "root"
+password = "your-password-here"
+database = "chatbot"
+ssl = false
+pool_size = 20
+max_overflow = 30
+pool_recycle = 3600
+echo_sql = false
+
+[security]
+secret_key = "your-secret-key-here"
+algorithm = "HS256"
+access_token_expire_minutes = 30
+
+[chat]
+max_history = 10
+prompt_template = """以下の会話履歴とコンテキストを使用して、最後の質問に答えてください。
+
+会話履歴:
+{chat_history}
+
+コンテキスト:
+{context}
+
+質問: {question}
+
+回答:"""
+user_label = "ユーザー"
+assistant_label = "アシスタント"
+
+
+[logging]
+level = "DEBUG"
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+file = "app.log"
