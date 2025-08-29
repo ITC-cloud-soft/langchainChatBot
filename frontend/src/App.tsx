@@ -1,32 +1,40 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Box, Container, CssBaseline } from '@mui/material';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 
+import createAppTheme from './themes';
 import Layout from './components/Layout';
 import ChatPage from './pages/ChatPage';
 import LlmConfigPage from './pages/LlmConfigPage';
 import KnowledgePage from './pages/KnowledgePage';
 
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
-    },
-  },
-});
+// アプリケーションテーマの作成
+const theme = createAppTheme('light');
 
 function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <Box sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100vh',
+        backgroundColor: 'background.default'
+      }}>
         <Layout>
-          <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+          <Container
+            maxWidth="xl"
+            sx={{
+              mt: 0,
+              mb: 0,
+              px: 0,
+              height: '100vh',
+              maxHeight: '100vh',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
             <Routes>
               <Route path="/" element={<ChatPage />} />
               <Route path="/chat" element={<ChatPage />} />

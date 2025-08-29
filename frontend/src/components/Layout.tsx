@@ -211,7 +211,6 @@ const MainContent: React.FC<MainContentProps> = memo(({ children }) => {
         width: { sm: `calc(100% - ${drawerWidth}px)` },
       }}
     >
-      <Toolbar />
       {children}
     </Box>
   );

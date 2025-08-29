@@ -1,7 +1,8 @@
 import { useReducer, useCallback, useEffect } from 'react';
 
 interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  id: string;
+  role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   sourceDocuments?: Array<{
@@ -13,9 +14,12 @@ interface ChatMessage {
 interface ChatSession {
   session_id: string;
   title?: string;
+  user_id?: string;
   created_at: string;
   updated_at: string;
-  is_active?: boolean;
+  is_active: boolean;
+  metadata?: Record<string, unknown>;
+  message_count?: number;
 }
 
 interface ChatState {
@@ -132,7 +136,7 @@ const chatReducer = (state: ChatState, action: ChatAction): ChatState => {
 interface UseChatStateReturn {
   state: ChatState;
   actions: {
-    setMessages: (messages: ChatMessage[]) => void;
+    setMessages: (messages: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
     addMessage: (message: ChatMessage) => void;
     updateLastMessage: (updates: Partial<ChatMessage>) => void;
     setSessions: (sessions: ChatSession[]) => void;
@@ -150,9 +154,14 @@ export const useChatState = (): UseChatStateReturn => {
   const [state, dispatch] = useReducer(chatReducer, initialState);
 
   const actions = {
-    setMessages: useCallback((messages: ChatMessage[]) => {
-      dispatch({ type: 'SET_MESSAGES', payload: messages });
-    }, []),
+    setMessages: useCallback((messages: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+      if (typeof messages === 'function') {
+        const newMessages = messages(state.messages);
+        dispatch({ type: 'SET_MESSAGES', payload: newMessages });
+      } else {
+        dispatch({ type: 'SET_MESSAGES', payload: messages });
+      }
+    }, [state.messages]),
 
     addMessage: useCallback((message: ChatMessage) => {
       dispatch({ type: 'ADD_MESSAGE', payload: message });
