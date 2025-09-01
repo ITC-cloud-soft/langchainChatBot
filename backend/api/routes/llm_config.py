@@ -105,45 +105,15 @@ async def get_models_from_api(api_base: str, api_key: str = "") -> List[str]:
                 if response.status_code != 401:
                     default_logger.warning(f"Response content: {response.text}")
             
-            # If both APIs fail, return fallback models
-            default_logger.info(f"Both API endpoints failed for {api_base}, returning fallback models")
-            return get_fallback_models()
+            # If both APIs fail, return empty list instead of fallback models
+            default_logger.info(f"Both API endpoints failed for {api_base}, returning empty model list")
+            return []
             
     except Exception as e:
         default_logger.error(f"Error getting models from API {api_base}: {e}")
-        return get_fallback_models()
+        return []
 
-def get_fallback_models() -> List[str]:
-    """Get fallback models list"""
-    return [
-        "gpt-3.5-turbo",
-        "gpt-4",
-        "gpt-4-turbo",
-        "llama3",
-        "llama3:8b", 
-        "llama3:70b",
-        "gemma:7b",
-        "mistral",
-        "mixtral",
-        "qwen:7b",
-        "qwen:14b",
-        "qwen:72b",
-        "phi3",
-        "claude-3-haiku",
-        "claude-3-sonnet"
-    ]
 
-async def get_ollama_models() -> List[str]:
-    """Get available models from Ollama API (legacy function)"""
-    try:
-        ollama_base_url = settings.EMBEDDING_BASE_URL.rstrip('/v1')
-        return await get_models_from_api(ollama_base_url)
-    except Exception as e:
-        default_logger.error(f"Error getting models from Ollama: {e}")
-        return get_fallback_models()
-
-# Available models cache
-available_models = []
 
 @router.get("/config", response_model=LLMConfigResponse)
 async def get_llm_config():

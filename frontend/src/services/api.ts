@@ -460,6 +460,15 @@ export const embeddingConfigApi = {
     return response.data;
   },
 
+  getModelsForProvider: async (providerConfig: {
+    provider: string;
+    base_url?: string;
+    api_key?: string;
+  }) => {
+    const response = await api.post('/api/embedding/models/for-provider', providerConfig);
+    return response.data;
+  },
+
   refreshAvailableModels: async () => {
     const response = await api.post('/api/embedding/models/refresh');
     return response.data;

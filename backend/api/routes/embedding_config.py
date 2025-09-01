@@ -37,53 +37,92 @@ class ConfigStatus(BaseModel):
     status: str
     message: str
 
-# Available embedding models by provider
-EMBEDDING_MODELS = {
-    "ollama": [
-        "nomic-embed-text:latest",
-        "nomic-embed-text:v1.5",
-        "mxbai-embed-large:latest",
-        "bge-large:latest",
-        "all-minilm:latest"
-    ],
-    "openai": [
-        "text-embedding-3-small",
-        "text-embedding-3-large",
-        "text-embedding-ada-002"
-    ],
-    "カスタム": []
-}
 
 async def get_embedding_models_from_api(base_url: str, api_key: str = "", provider: str = "ollama") -> List[str]:
     """Get available embedding models from the specified API"""
     try:
         if provider == "ollama":
             # For Ollama, get available models
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 headers = {"Content-Type": "application/json"}
                 
                 # Try Ollama API
                 ollama_url = f"{base_url.rstrip('/')}/api/tags"
-                response = await client.get(ollama_url, headers=headers)
+                default_logger.info(f"Fetching Ollama embedding models from: {ollama_url}")
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    models = data.get("models", [])
-                    # Filter models that are suitable for embedding
-                    embedding_models = []
-                    for model in models:
-                        name = model.get("name", "")
-                        if any(keyword in name.lower() for keyword in ["embed", "bge", "minilm"]):
-                            embedding_models.append(name)
+                try:
+                    response = await client.get(ollama_url, headers=headers)
+                    default_logger.info(f"Ollama API response status: {response.status_code}")
                     
-                    return embedding_models if embedding_models else EMBEDDING_MODELS["ollama"]
-                else:
-                    default_logger.warning(f"Ollama API endpoint returned status {response.status_code}")
-                    return EMBEDDING_MODELS["ollama"]
+                    if response.status_code == 200:
+                        data = response.json()
+                        models = data.get("models", [])
+                        default_logger.info(f"Raw Ollama response: {data}")
+                        default_logger.info(f"Found {len(models)} total models from Ollama")
+                        
+                        # Filter models that are suitable for embedding
+                        embedding_models = []
+                        for model in models:
+                            name = model.get("name", "")
+                            default_logger.debug(f"Checking model: {name}")
+                            # More comprehensive embedding model detection
+                            if any(keyword in name.lower() for keyword in ["embed", "bge", "minilm", "nomic", "mxbai", "snowflake", "arctic"]):
+                                embedding_models.append(name)
+                                default_logger.debug(f"Added embedding model: {name}")
+                        
+                        # If no specific embedding models found, return all models (user can choose)
+                        if not embedding_models:
+                            default_logger.info("No specific embedding models found, returning all models")
+                            embedding_models = [model.get("name", "") for model in models if model.get("name")]
+                        
+                        default_logger.info(f"Filtered to {len(embedding_models)} embedding models: {embedding_models}")
+                        return embedding_models
+                    else:
+                        default_logger.warning(f"Ollama API endpoint returned status {response.status_code}: {response.text}")
+                        return []
+                        
+                except httpx.ConnectError as e:
+                    default_logger.error(f"Connection error to Ollama at {ollama_url}: {e}")
+                    return []
+                except httpx.TimeoutException as e:
+                    default_logger.error(f"Timeout error connecting to Ollama at {ollama_url}: {e}")
+                    return []
+                except Exception as e:
+                    default_logger.error(f"Unexpected error connecting to Ollama: {e}")
+                    return []
         
         elif provider == "openai":
-            # For OpenAI, return predefined models
-            return EMBEDDING_MODELS["openai"]
+            # For OpenAI, try to get models from API
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    headers = {"Content-Type": "application/json"}
+                    if api_key:
+                        headers["Authorization"] = f"Bearer {api_key}"
+                    
+                    models_url = f"{base_url.rstrip('/')}/models"
+                    default_logger.info(f"Fetching OpenAI embedding models from: {models_url}")
+                    response = await client.get(models_url, headers=headers)
+                    
+                    default_logger.info(f"OpenAI API response status: {response.status_code}")
+                    if response.status_code == 200:
+                        data = response.json()
+                        models = data.get("data", [])
+                        default_logger.info(f"Found {len(models)} total models from OpenAI")
+                        # Filter models that might be embedding models
+                        embedding_models = []
+                        for model in models:
+                            model_id = model.get("id", "")
+                            if any(keyword in model_id.lower() for keyword in ["embed", "text-embedding"]):
+                                embedding_models.append(model_id)
+                        
+                        default_logger.info(f"Filtered to {len(embedding_models)} embedding models: {embedding_models}")
+                        return embedding_models
+                    else:
+                        default_logger.warning(f"OpenAI API returned status {response.status_code}: {response.text}")
+                        return []
+            except Exception as e:
+                default_logger.error(f"Error fetching OpenAI embedding models: {e}")
+                return []
         
         else:
             # For カスタム, try to get models
@@ -105,13 +144,16 @@ async def get_embedding_models_from_api(base_url: str, api_key: str = "", provid
                         if any(keyword in model_id.lower() for keyword in ["embed", "text-embedding"]):
                             embedding_models.append(model_id)
                     
-                    return embedding_models if embedding_models else ["custom-embedding-model"]
+                    return embedding_models if embedding_models else []
                 else:
-                    return ["custom-embedding-model"]
+                    return []
     
     except Exception as e:
-        default_logger.error(f"Error getting embedding models from API {base_url}: {e}")
-        return EMBEDDING_MODELS.get(provider, ["custom-embedding-model"])
+        default_logger.error(f"Error getting embedding models from API {base_url} (provider: {provider}): {e}")
+        default_logger.error(f"Exception type: {type(e).__name__}")
+        import traceback
+        default_logger.error(f"Traceback: {traceback.format_exc()}")
+        return []
 
 @router.get("/config", response_model=EmbeddingConfigResponse)
 async def get_embedding_config():
@@ -219,7 +261,36 @@ async def test_embedding_config(config: EmbeddingConfig):
             message=f"Embedding configuration test failed: {str(e)}"
         )
 
-@router.get("/models", response_model=List[str])
+@router.post("/models/for-provider", response_model=List[str])
+async def get_models_for_provider(request: Dict[str, Any]):
+    """プロバイダー指定によるモデル取得"""
+    try:
+        provider = request.get("provider", "ollama")
+        base_url = request.get("base_url", "")
+        api_key = request.get("api_key", "")
+        
+        # プロバイダーに応じたデフォルトベースURLを設定
+        if not base_url:
+            if provider == "ollama":
+                base_url = "http://localhost:11434"
+            elif provider == "openai":
+                base_url = "https://api.openai.com/v1"
+            else:  # カスタム
+                base_url = "http://localhost:11434/v1"
+        
+        default_logger.info(f"Getting models for provider: {provider}, Base URL: {base_url}")
+        
+        # 指定されたプロバイダーからモデルを取得
+        models = await get_embedding_models_from_api(base_url, api_key, provider)
+        
+        default_logger.info(f"Models for provider {provider}: {models} (count: {len(models)})")
+        
+        return models
+    except Exception as e:
+        default_logger.error(f"Error getting models for provider: {e}")
+        import traceback
+        default_logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error getting models for provider: {str(e)}")
 async def get_available_embedding_models():
     """Get list of available embedding models"""
     try:
@@ -228,10 +299,18 @@ async def get_available_embedding_models():
         base_url = config_manager.get_value("embedding", "base_url") or "http://localhost:11434"
         api_key = config_manager.get_value("embedding", "api_key") or ""
         
+        default_logger.info(f"Getting available embedding models - Provider: {provider}, Base URL: {base_url}")
+        
         # Get models from the configured API
         models = await get_embedding_models_from_api(base_url, api_key, provider)
+        
+        default_logger.info(f"Final models list for API response: {models} (count: {len(models)})")
+        
         return models
     except Exception as e:
+        default_logger.error(f"Error in get_available_embedding_models endpoint: {e}")
+        import traceback
+        default_logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error getting available embedding models: {str(e)}")
 
 @router.post("/models/refresh", response_model=List[str])
@@ -243,10 +322,18 @@ async def refresh_available_embedding_models():
         base_url = config_manager.get_value("embedding", "base_url") or "http://localhost:11434"
         api_key = config_manager.get_value("embedding", "api_key") or ""
         
+        default_logger.info(f"Refreshing available embedding models - Provider: {provider}, Base URL: {base_url}")
+        
         # Get models from the configured API
         models = await get_embedding_models_from_api(base_url, api_key, provider)
+        
+        default_logger.info(f"Final refreshed models list for API response: {models} (count: {len(models)})")
+        
         return models
     except Exception as e:
+        default_logger.error(f"Error in refresh_available_embedding_models endpoint: {e}")
+        import traceback
+        default_logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error refreshing available embedding models: {str(e)}")
 
 @router.get("/config/default", response_model=EmbeddingConfig)

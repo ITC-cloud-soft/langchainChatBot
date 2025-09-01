@@ -141,14 +141,22 @@ const LlmConfigPage: React.FC = () => {
 
   const loadEmbeddingConfig = useCallback(async () => {
     try {
+      console.log('Loading embedding config...');
       const response = (await embeddingConfigApi.getConfig()) as EmbeddingConfigResponse;
+      console.log('Embedding config response:', response);
+      
       setEmbeddingConfig(response.config);
+      
       // Also set available models from the config response
       if (response.available_models && Array.isArray(response.available_models)) {
+        console.log('Setting available embedding models from config response:', response.available_models);
         setAvailableEmbeddingModels(response.available_models);
+      } else {
+        console.log('No available_models found in config response, will load separately');
       }
     } catch (error) {
       logger.error('Error loading embedding config:', error);
+      console.error('Detailed embedding config error:', error);
       const errorMessage =
         (error as Error).message || '埋め込み設定の読み込み中にエラーが発生しました';
       enqueueSnackbar(errorMessage, { variant: 'error' });
@@ -166,22 +174,48 @@ const LlmConfigPage: React.FC = () => {
   const loadAvailableEmbeddingModels = useCallback(async () => {
     try {
       const response = await embeddingConfigApi.getAvailableModels();
+      console.log('Raw embedding models API response:', response);
+      console.log('Response type:', typeof response);
+      console.log('Is array:', Array.isArray(response));
+      
       // Handle different response formats
+      let models: string[] = [];
       if (Array.isArray(response)) {
-        setAvailableEmbeddingModels(response);
-      } else if (response.data && Array.isArray(response.data)) {
-        setAvailableEmbeddingModels(response.data);
-      } else if (response.config?.available_models) {
-        setAvailableEmbeddingModels(response.config.available_models);
+        models = response;
+        console.log('Using direct array response');
+      } else if (response && typeof response === 'object') {
+        if (response.data && Array.isArray(response.data)) {
+          models = response.data;
+          console.log('Using response.data array');
+        } else if (response.config?.available_models && Array.isArray(response.config.available_models)) {
+          models = response.config.available_models;
+          console.log('Using response.config.available_models array');
+        } else {
+          console.warn('Response object found but no recognizable model array:', response);
+          models = [];
+        }
       } else {
-        logger.warn('Unexpected response format for embedding models:', response);
-        setAvailableEmbeddingModels([]);
+        console.warn('Unexpected response format for embedding models:', response);
+        models = [];
+      }
+      
+      console.log('Final extracted models:', models);
+      console.log('Models count:', models.length);
+      
+      setAvailableEmbeddingModels(models);
+      
+      if (models.length > 0) {
+        console.log('Successfully loaded', models.length, 'embedding models');
+      } else {
+        console.warn('No embedding models were loaded');
       }
     } catch (error) {
       logger.error('Error loading available embedding models:', error);
+      console.error('Detailed error:', error);
       enqueueSnackbar('利用可能な埋め込みモデルの読み込み中にエラーが発生しました', {
         variant: 'error',
       });
+      setAvailableEmbeddingModels([]);
     }
   }, [enqueueSnackbar]);
 
@@ -192,6 +226,12 @@ const LlmConfigPage: React.FC = () => {
     loadEmbeddingConfig();
     loadAvailableEmbeddingModels();
   }, []); // Empty dependency array to run only on mount
+
+  // Debug: Monitor availableEmbeddingModels changes (可以在生産環境中移除)
+  // useEffect(() => {
+  //   console.log('availableEmbeddingModels state changed:', availableEmbeddingModels);
+  //   console.log('availableEmbeddingModels length:', availableEmbeddingModels?.length);
+  // }, [availableEmbeddingModels]);
 
   const handleRefreshModels = async () => {
     if (!config) return;
@@ -207,10 +247,39 @@ const LlmConfigPage: React.FC = () => {
       } else {
         setAvailableModels([]);
       }
-      enqueueSnackbar('モデルリストを更新しました', { variant: 'success' });
+      
+      if (response && response.length > 0) {
+        enqueueSnackbar('モデルリストを更新しました', { variant: 'success' });
+      } else {
+        enqueueSnackbar('利用可能なモデルが見つかりませんでした', { variant: 'warning' });
+      }
     } catch (error) {
       logger.error('Error refreshing models:', error);
       enqueueSnackbar('モデルリストの更新中にエラーが発生しました', { variant: 'error' });
+    }
+  };
+
+  // 共通のモデル取得関数
+  const fetchModelsFromConfig = async (testConfig: any, sourceDescription: string) => {
+    try {
+      const response = await llmConfigApi.getModelsFromApi(testConfig);
+      // Handle different response formats
+      if (Array.isArray(response)) {
+        setAvailableModels(response);
+      } else if (response.data && Array.isArray(response.data)) {
+        setAvailableModels(response.data);
+      } else {
+        setAvailableModels([]);
+      }
+      
+      if (response && response.length > 0) {
+        enqueueSnackbar(`${sourceDescription}によりモデルリストを取得しました`, { variant: 'success' });
+      } else {
+        enqueueSnackbar('利用可能なモデルが見つかりませんでした', { variant: 'warning' });
+      }
+    } catch (error) {
+      logger.error(`Error getting models from ${sourceDescription}:`, error);
+      // Don't show error for automatic model fetching
     }
   };
 
@@ -220,26 +289,27 @@ const LlmConfigPage: React.FC = () => {
     handleInputChange('api_base', apiBase);
 
     // Try to get models from the new API base
-    if (apiBase && config.provider === 'カスタム') {
-      try {
-        const testConfig = {
-          ...config,
-          api_base: apiBase,
-        };
-        const response = await llmConfigApi.getModelsFromApi(testConfig);
-        // Handle different response formats
-        if (Array.isArray(response)) {
-          setAvailableModels(response);
-        } else if (response.data && Array.isArray(response.data)) {
-          setAvailableModels(response.data);
-        } else {
-          setAvailableModels([]);
-        }
-        enqueueSnackbar('新しいAPIからモデルリストを取得しました', { variant: 'success' });
-      } catch (error) {
-        logger.error('Error getting models from new API:', error);
-        // Don't show error for automatic model fetching
-      }
+    if (apiBase && apiBase.trim() !== '') {
+      const testConfig = {
+        ...config,
+        api_base: apiBase,
+      };
+      await fetchModelsFromConfig(testConfig, 'APIベースURL');
+    }
+  };
+
+  const handleApiKeyChange = async (apiKey: string) => {
+    if (!config) return;
+    // Update config
+    handleInputChange('api_key', apiKey);
+
+    // Try to get models from the new API key
+    if (apiKey && apiKey !== 'nokey') {
+      const testConfig = {
+        ...config,
+        api_key: apiKey,
+      };
+      await fetchModelsFromConfig(testConfig, 'APIキー');
     }
   };
 
@@ -444,9 +514,9 @@ const LlmConfigPage: React.FC = () => {
     // Update config
     handleEmbeddingInputChange('provider', provider);
 
-    // Only set defaults if the current values are empty or invalid
-    let needsApiBaseUpdate = !embeddingConfig.base_url || embeddingConfig.base_url.trim() === '';
-    let needsModelUpdate = !embeddingConfig.model_name || embeddingConfig.model_name.trim() === '';
+    // プロバイダー変更時は常にデフォルト設定を適用
+    let needsApiBaseUpdate = true; // プロバイダー変更時は常にAPI URLを更新
+    let needsModelUpdate = true; // プロバイダー変更時は常にモデル名を更新
     let needsDimensionUpdate = !embeddingConfig.dimension || embeddingConfig.dimension === 0;
 
     let newApiBase = embeddingConfig.base_url;
@@ -501,44 +571,129 @@ const LlmConfigPage: React.FC = () => {
       }
     }
 
-    // Update API base, model name, and dimension only if needed
+    // Update API base, model name, and dimension according to provider change
     if (needsApiBaseUpdate) {
+      console.log(`Updating API base for provider ${provider}: ${newApiBase}`);
       handleEmbeddingInputChange('base_url', newApiBase);
     }
     if (needsModelUpdate) {
+      console.log(`Updating model name for provider ${provider}: ${newModelName}`);
       handleEmbeddingInputChange('model_name', newModelName);
     }
     if (needsDimensionUpdate) {
+      console.log(`Updating dimension for provider ${provider}: ${newDimension}`);
       handleEmbeddingInputChange('dimension', newDimension);
     }
 
-    // Try to get models for the new provider
-    if (provider === 'ollama' && newApiBase) {
-      try {
-        const testConfig = {
-          ...embeddingConfig,
-          provider: provider,
-          base_url: newApiBase,
-        };
-        const response = await embeddingConfigApi.getAvailableModels();
-        // Handle different response formats
-        if (Array.isArray(response)) {
-          setAvailableEmbeddingModels(response);
-        } else if (response.data && Array.isArray(response.data)) {
-          setAvailableEmbeddingModels(response.data);
+    // すべてのプロバイダーでモデルを取得しようと試みる
+    if (newApiBase) {
+      await fetchEmbeddingModelsFromProvider(provider, newApiBase, embeddingConfig.api_key);
+    }
+  };
+
+  // プロバイダー指定でのモデル取得関数
+  const fetchEmbeddingModelsFromProvider = async (provider: string, baseUrl: string, apiKey: string = '') => {
+    try {
+      console.log(`Fetching embedding models from provider: ${provider}, baseUrl: ${baseUrl}`);
+      const response = await embeddingConfigApi.getModelsForProvider({
+        provider: provider,
+        base_url: baseUrl,
+        api_key: apiKey
+      });
+      console.log('fetchEmbeddingModelsFromProvider response:', response);
+      console.log('Response type:', typeof response);
+      console.log('Is array:', Array.isArray(response));
+      
+      // Handle different response formats
+      let models: string[] = [];
+      if (Array.isArray(response)) {
+        models = response;
+        console.log('Using direct array response from provider', provider);
+      } else if (response && typeof response === 'object') {
+        if (response.data && Array.isArray(response.data)) {
+          models = response.data;
+          console.log('Using response.data array from provider', provider);
         } else {
-          setAvailableEmbeddingModels([]);
+          console.warn('Response object found but no recognizable model array from provider', provider, ':', response);
+          models = [];
         }
-        enqueueSnackbar(`${provider}の埋め込みモデルリストを取得しました`, { variant: 'success' });
-      } catch (error) {
-        logger.error('Error getting embedding models for new provider:', error);
-        // Don't show error for automatic model fetching
+      } else {
+        console.warn('Unexpected response format from provider', provider, ':', response);
+        models = [];
       }
-    } else {
-      // For non-ollama providers, set the current model in available models
-      if (newModelName) {
-        setAvailableEmbeddingModels([newModelName]);
+      
+      console.log('Final extracted models from provider', provider, ':', models);
+      console.log('Models count from provider', provider, ':', models.length);
+      
+      setAvailableEmbeddingModels(models);
+      
+      // Auto-select first model only if no model is currently set
+      if (models.length > 0 && embeddingConfig && (!embeddingConfig.model_name || embeddingConfig.model_name.trim() === '')) {
+        console.log(`Auto-selecting first model: ${models[0]} (no current model set)`);
+        handleEmbeddingInputChange('model_name', models[0]);
       }
+      
+      if (models && models.length > 0) {
+        enqueueSnackbar(`${provider}プロバイダーにより埋め込みモデルリストを取得しました (${models.length}件)`, { variant: 'success' });
+      } else {
+        enqueueSnackbar(`${provider}プロバイダーで利用可能な埋め込みモデルが見つかりませんでした`, { variant: 'warning' });
+      }
+    } catch (error) {
+      console.error(`Error getting embedding models from provider ${provider}:`, error);
+      logger.error(`Error getting embedding models from provider ${provider}:`, error);
+      // Don't show error for automatic model fetching
+      setAvailableEmbeddingModels([]);
+    }
+  };
+
+  // 埋め込みモデル用の共通取得関数
+  const fetchEmbeddingModelsFromConfig = async (sourceDescription: string) => {
+    try {
+      console.log(`Fetching embedding models from ${sourceDescription}...`);
+      const response = await embeddingConfigApi.getAvailableModels();
+      console.log('fetchEmbeddingModelsFromConfig response:', response);
+      console.log('Response type:', typeof response);
+      console.log('Is array:', Array.isArray(response));
+      
+      // Handle different response formats
+      let models: string[] = [];
+      if (Array.isArray(response)) {
+        models = response;
+        console.log('Using direct array response from', sourceDescription);
+      } else if (response && typeof response === 'object') {
+        if (response.data && Array.isArray(response.data)) {
+          models = response.data;
+          console.log('Using response.data array from', sourceDescription);
+        } else {
+          console.warn('Response object found but no recognizable model array from', sourceDescription, ':', response);
+          models = [];
+        }
+      } else {
+        console.warn('Unexpected response format from', sourceDescription, ':', response);
+        models = [];
+      }
+      
+      console.log('Final extracted models from', sourceDescription, ':', models);
+      console.log('Models count from', sourceDescription, ':', models.length);
+      
+      setAvailableEmbeddingModels(models);
+      
+      // Auto-select first model only if no model is currently set
+      if (models.length > 0 && embeddingConfig && (!embeddingConfig.model_name || embeddingConfig.model_name.trim() === '')) {
+        console.log(`Auto-selecting first model: ${models[0]} (no current model set)`);
+        handleEmbeddingInputChange('model_name', models[0]);
+      }
+      
+      if (models && models.length > 0) {
+        enqueueSnackbar(`${sourceDescription}により埋め込みモデルリストを取得しました (${models.length}件)`, { variant: 'success' });
+      } else {
+        enqueueSnackbar('利用可能な埋め込みモデルが見つかりませんでした', { variant: 'warning' });
+      }
+    } catch (error) {
+      console.error(`Error getting embedding models from ${sourceDescription}:`, error);
+      logger.error(`Error getting embedding models from ${sourceDescription}:`, error);
+      // Don't show error for automatic model fetching
+      setAvailableEmbeddingModels([]);
     }
   };
 
@@ -548,41 +703,73 @@ const LlmConfigPage: React.FC = () => {
     handleEmbeddingInputChange('base_url', apiBase);
 
     // Try to get models from the new API base
-    if (apiBase && embeddingConfig.provider === 'ollama') {
-      try {
-        const response = await embeddingConfigApi.getAvailableModels();
-        // Handle different response formats
-        if (Array.isArray(response)) {
-          setAvailableEmbeddingModels(response);
-        } else if (response.data && Array.isArray(response.data)) {
-          setAvailableEmbeddingModels(response.data);
-        } else {
-          setAvailableEmbeddingModels([]);
-        }
-        enqueueSnackbar('新しいAPIから埋め込みモデルリストを取得しました', { variant: 'success' });
-      } catch (error) {
-        logger.error('Error getting embedding models from new API:', error);
-        // Don't show error for automatic model fetching
-      }
+    if (apiBase && apiBase.trim() !== '') {
+      await fetchEmbeddingModelsFromConfig('APIベースURL');
+    }
+  };
+
+  // 埋め込みAPIキー変更ハンドラーを追加
+  const handleEmbeddingApiKeyChange = async (apiKey: string) => {
+    if (!embeddingConfig) return;
+    // Update config
+    handleEmbeddingInputChange('api_key', apiKey);
+
+    // Try to get models from the new API key
+    if (apiKey && apiKey.trim() !== '') {
+      await fetchEmbeddingModelsFromConfig('APIキー');
     }
   };
 
   const handleRefreshEmbeddingModels = async () => {
     if (!embeddingConfig) return;
     try {
+      console.log('Refreshing embedding models...');
+      console.log('Current embedding config:', embeddingConfig);
+      
       const response = await embeddingConfigApi.refreshAvailableModels();
+      console.log('Refresh embedding models response:', response);
+      console.log('Response type:', typeof response);
+      console.log('Is array:', Array.isArray(response));
+      
       // Handle different response formats
+      let models: string[] = [];
       if (Array.isArray(response)) {
-        setAvailableEmbeddingModels(response);
-      } else if (response.data && Array.isArray(response.data)) {
-        setAvailableEmbeddingModels(response.data);
+        models = response;
+        console.log('Using direct array response for refresh');
+      } else if (response && typeof response === 'object') {
+        if (response.data && Array.isArray(response.data)) {
+          models = response.data;
+          console.log('Using response.data array for refresh');
+        } else {
+          console.warn('Response object found but no recognizable model array for refresh:', response);
+          models = [];
+        }
       } else {
-        setAvailableEmbeddingModels([]);
+        console.warn('Unexpected response format for refresh:', response);
+        models = [];
       }
-      enqueueSnackbar('埋め込みモデルリストを更新しました', { variant: 'success' });
+      
+      console.log('Final extracted models for refresh:', models);
+      console.log('Models count for refresh:', models.length);
+      
+      setAvailableEmbeddingModels(models);
+      
+      // Auto-select first model only if no model is currently set
+      if (models.length > 0 && embeddingConfig && (!embeddingConfig.model_name || embeddingConfig.model_name.trim() === '')) {
+        console.log(`Auto-selecting first model on refresh: ${models[0]} (no current model set)`);
+        handleEmbeddingInputChange('model_name', models[0]);
+      }
+      
+      if (models.length > 0) {
+        enqueueSnackbar(`埋め込みモデルリストを更新しました (${models.length}件)`, { variant: 'success' });
+      } else {
+        enqueueSnackbar('利用可能な埋め込みモデルが見つかりませんでした', { variant: 'warning' });
+      }
     } catch (error) {
+      console.error('Error refreshing embedding models:', error);
       logger.error('Error refreshing embedding models:', error);
       enqueueSnackbar('埋め込みモデルリストの更新中にエラーが発生しました', { variant: 'error' });
+      setAvailableEmbeddingModels([]);
     }
   };
 
@@ -676,6 +863,14 @@ const LlmConfigPage: React.FC = () => {
     );
   }
 
+  // Debug: Log current state before rendering (本番環境では削除推奨)
+  // console.log('=== LlmConfigPage Render Debug ===');
+  // console.log('availableEmbeddingModels:', availableEmbeddingModels);
+  // console.log('availableEmbeddingModels length:', availableEmbeddingModels?.length);
+  // console.log('embeddingConfig.model_name:', embeddingConfig?.model_name);
+  // console.log('embeddingConfig.provider:', embeddingConfig?.provider);
+  // console.log('================================');
+
   return (
     <Box sx={{ height: '100%' }}>
       <Typography variant="h4" gutterBottom>
@@ -711,6 +906,26 @@ const LlmConfigPage: React.FC = () => {
                     </Select>
                     <Typography variant="caption" color="text.secondary">
                       使用するLLMプロバイダーを選択します
+                      {config.provider === 'openai' && (
+                        <Typography component="div" variant="caption" color="info.main" sx={{ mt: 0.5 }}>
+                          OpenAIは標準API URL (https://api.openai.com/v1) を使用します
+                        </Typography>
+                      )}
+                      {config.provider === 'anthropic' && (
+                        <Typography component="div" variant="caption" color="info.main" sx={{ mt: 0.5 }}>
+                          Anthropic Claudeの標準API URL (https://api.anthropic.com) を使用します
+                        </Typography>
+                      )}
+                      {config.provider === 'gemini' && (
+                        <Typography component="div" variant="caption" color="info.main" sx={{ mt: 0.5 }}>
+                          Google Geminiの標準API URL (https://generativelanguage.googleapis.com/v1) を使用します
+                        </Typography>
+                      )}
+                      {config.provider === 'カスタム' && (
+                        <Typography component="div" variant="caption" color="warning.main" sx={{ mt: 0.5 }}>
+                          カスタムAPIではAPIベースURLを手動で設定する必要があります
+                        </Typography>
+                      )}
                     </Typography>
                   </FormControl>
                 </Grid>
@@ -733,7 +948,7 @@ const LlmConfigPage: React.FC = () => {
                     fullWidth
                     label="API Key"
                     value={config.api_key}
-                    onChange={e => handleInputChange('api_key', e.target.value)}
+                    onChange={e => handleApiKeyChange(e.target.value)}
                     placeholder="nokey"
                     type="password"
                     helperText="LLM APIのキー"
@@ -748,12 +963,17 @@ const LlmConfigPage: React.FC = () => {
                       label="モデル名"
                       onChange={e => handleInputChange('model_name', e.target.value)}
                     >
-                      {availableModels &&
+                      {availableModels && availableModels.length > 0 ? (
                         availableModels.map(model => (
                           <MenuItem key={model} value={model}>
                             {model}
                           </MenuItem>
-                        ))}
+                        ))
+                      ) : (
+                        <MenuItem value="" disabled>
+                          利用可能なモデルがありません
+                        </MenuItem>
+                      )}
                     </Select>
                     <Box sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
                       <IconButton onClick={handleRefreshModels} size="small">
@@ -763,6 +983,11 @@ const LlmConfigPage: React.FC = () => {
                         利用可能なモデルを更新
                       </Typography>
                     </Box>
+                    {(!availableModels || availableModels.length === 0) && (
+                      <Typography variant="caption" color="error" sx={{ mt: 1 }}>
+                        APIキーまたはAPIベースURLを確認してください
+                      </Typography>
+                    )}
                   </FormControl>
                 </Grid>
               </Grid>
@@ -994,27 +1219,44 @@ const LlmConfigPage: React.FC = () => {
                     </Select>
                     <Typography variant="caption" color="text.secondary">
                       使用する埋め込みプロバイダーを選択します
+                      {embeddingConfig.provider === 'ollama' && (
+                        <Typography component="div" variant="caption" color="info.main" sx={{ mt: 0.5 }}>
+                          Ollamaは標準API URL (http://localhost:11434) を使用します。APIキーは不要です
+                        </Typography>
+                      )}
+                      {embeddingConfig.provider === 'openai' && (
+                        <Typography component="div" variant="caption" color="info.main" sx={{ mt: 0.5 }}>
+                          OpenAIは標準API URL (https://api.openai.com/v1) を使用します
+                        </Typography>
+                      )}
+                      {embeddingConfig.provider === 'カスタム' && (
+                        <Typography component="div" variant="caption" color="warning.main" sx={{ mt: 0.5 }}>
+                          カスタムAPIではAPIベースURLを手動で設定する必要があります
+                        </Typography>
+                      )}
                     </Typography>
                   </FormControl>
                 </Grid>
 
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="API Base URL"
-                    value={embeddingConfig.base_url}
-                    onChange={e => handleEmbeddingApiBaseChange(e.target.value)}
-                    placeholder="http://localhost:11434"
-                    helperText="埋め込みAPIのベースURL"
-                  />
-                </Grid>
+                {embeddingConfig.provider !== 'openai' && (
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="API Base URL"
+                      value={embeddingConfig.base_url}
+                      onChange={e => handleEmbeddingApiBaseChange(e.target.value)}
+                      placeholder="http://localhost:11434"
+                      helperText="埋め込みAPIのベースURL"
+                    />
+                  </Grid>
+                )}
 
                 <Grid item xs={12}>
                   <TextField
                     fullWidth
                     label="API Key"
                     value={embeddingConfig.api_key}
-                    onChange={e => handleEmbeddingInputChange('api_key', e.target.value)}
+                    onChange={e => handleEmbeddingApiKeyChange(e.target.value)}
                     placeholder=""
                     type="password"
                     helperText="埋め込みAPIのキー（Ollamaの場合は不要）"
@@ -1025,16 +1267,52 @@ const LlmConfigPage: React.FC = () => {
                   <FormControl fullWidth>
                     <InputLabel>モデル名</InputLabel>
                     <Select
-                      value={embeddingConfig.model_name}
+                      value={
+                        availableEmbeddingModels && availableEmbeddingModels.length > 0
+                          ? embeddingConfig.model_name || ''
+                          : ''
+                      }
                       label="モデル名"
-                      onChange={e => handleEmbeddingInputChange('model_name', e.target.value)}
+                      onChange={e => {
+                        console.log('Select onChange:', e.target.value);
+                        handleEmbeddingInputChange('model_name', e.target.value);
+                      }}
                     >
-                      {availableEmbeddingModels &&
-                        availableEmbeddingModels.map(model => (
-                          <MenuItem key={model} value={model}>
-                            {model}
-                          </MenuItem>
-                        ))}
+                      {(() => {
+                        const menuItems = [];
+                        
+                        // 利用可能なモデルがある場合
+                        if (availableEmbeddingModels && availableEmbeddingModels.length > 0) {
+                          availableEmbeddingModels.forEach(model => {
+                            menuItems.push(
+                              <MenuItem key={model} value={model}>
+                                {model}
+                              </MenuItem>
+                            );
+                          });
+                          
+                          // 現在のモデル名がリストにない場合、追加して表示
+                          if (embeddingConfig.model_name && 
+                              embeddingConfig.model_name.trim() !== '' && 
+                              !availableEmbeddingModels.includes(embeddingConfig.model_name)) {
+                            menuItems.unshift(
+                              <MenuItem key={embeddingConfig.model_name} value={embeddingConfig.model_name}>
+                                {embeddingConfig.model_name}
+                              </MenuItem>
+                            );
+                          }
+                        } else {
+                          // 利用可能なモデルがない場合は、現在のモデル名を表示せず、
+                          // 「利用可能なモデルがありません」のみ表示
+                          menuItems.push(
+                            <MenuItem key="no-models" value="" disabled>
+                              利用可能なモデルがありません
+                            </MenuItem>
+                          );
+                        }
+                        
+                        return menuItems;
+                      })()}
                     </Select>
                     <Box sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
                       <IconButton onClick={handleRefreshEmbeddingModels} size="small">
@@ -1043,7 +1321,18 @@ const LlmConfigPage: React.FC = () => {
                       <Typography variant="caption" color="text.secondary">
                         利用可能なモデルを更新
                       </Typography>
+                      <Typography variant="caption" color="info.main" sx={{ ml: 2 }}>
+                        現在のモデル数: {availableEmbeddingModels ? availableEmbeddingModels.length : 0}
+                      </Typography>
                     </Box>
+                    {(!availableEmbeddingModels || availableEmbeddingModels.length === 0) && (
+                      <Typography variant="caption" color="error" sx={{ mt: 1 }}>
+                        {embeddingConfig.provider === 'openai' 
+                          ? 'APIキーを確認してください' 
+                          : 'APIキーまたはAPIベースURLを確認してください'
+                        }
+                      </Typography>
+                    )}
                   </FormControl>
                 </Grid>
 
