@@ -291,6 +291,8 @@ async def get_models_for_provider(request: Dict[str, Any]):
         import traceback
         default_logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error getting models for provider: {str(e)}")
+    
+@router.get("/models", response_model=List[str])
 async def get_available_embedding_models():
     """Get list of available embedding models"""
     try:
