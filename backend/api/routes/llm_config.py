@@ -225,19 +225,6 @@ async def get_available_models():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting available models: {str(e)}")
 
-@router.post("/models/refresh", response_model=List[str])
-async def refresh_available_models():
-    """Refresh list of available models from the LLM API"""
-    try:
-        # Get current configuration
-        api_base = config_manager.get_value("llm", "api_base") or settings.OPENAI_API_BASE
-        api_key = config_manager.get_value("llm", "api_key") or settings.OPENAI_API_KEY
-        
-        # Get models from the configured API
-        models = await get_models_from_api(api_base, api_key)
-        return models
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error refreshing available models: {str(e)}")
 
 @router.post("/models/from-api", response_model=List[str])
 async def get_models_from_api_endpoint(config: LLMConfig):
