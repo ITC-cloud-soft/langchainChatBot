@@ -26,6 +26,7 @@ class ChatMessage(BaseModel):
     """Chat message model"""
     message: str
     session_id: Optional[str] = None
+    system_prompt: Optional[str] = None
     
     @field_validator('message')
     @classmethod
@@ -99,12 +100,13 @@ async def send_message(chat_message: ChatMessage):
         # Process message through chat service
         response = await chat_service.process_message(
             message=chat_message.message,
-            session_id=chat_message.session_id
+            session_id=chat_message.session_id,
+            system_prompt=chat_message.system_prompt
         )
         
         return ChatResponse(
             response=response["response"],
-            source_documents=response.get("source_documents"),
+            source_documents=[{"content": doc.get("content"), "metadata": doc.get("metadata")} for doc in response.get("source_documents", [])] if response.get("source_documents") else [],
             session_id=response["session_id"]
         )
     except Exception as e:
@@ -119,7 +121,8 @@ async def stream_message(chat_message: ChatMessage):
     async def generate():
         async for chunk in chat_service.stream_message(
             message=chat_message.message,
-            session_id=chat_message.session_id
+            session_id=chat_message.session_id,
+            system_prompt=chat_message.system_prompt
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
     

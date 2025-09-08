@@ -119,13 +119,22 @@ class ChatService(BaseService):
         """アシスタントラベルを取得"""
         return settings.chat.assistant_label
     
-    def _create_qa_chain(self, llm, include_prompt: bool = True):
+    def _create_qa_chain(self, llm, include_prompt: bool = True, system_prompt: str = None):
         """QAチェーンを作成"""
         if include_prompt:
-            prompt = PromptTemplate(
-                template=self._get_prompt_template(),
-                input_variables=["chat_history", "context", "question"]
-            )
+            # カスタムシステムプロンプトが指定されている場合はそれを使用
+            if system_prompt:
+                # システムプロンプトを既存のテンプレートに統合
+                custom_template = f"{system_prompt}\n\n{self._get_prompt_template()}"
+                prompt = PromptTemplate(
+                    template=custom_template,
+                    input_variables=["chat_history", "context", "question"]
+                )
+            else:
+                prompt = PromptTemplate(
+                    template=self._get_prompt_template(),
+                    input_variables=["chat_history", "context", "question"]
+                )
             
             # ConversationalRetrievalChainを使用して会話履歴をサポート
             return ConversationalRetrievalChain.from_llm(
@@ -199,7 +208,8 @@ class ChatService(BaseService):
     async def process_message(
         self,
         message: str,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        system_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
         """Process a chat message and return response"""
         self.ensure_initialized()
@@ -252,10 +262,18 @@ class ChatService(BaseService):
                             if messages[i]["role"] == "user" and messages[i + 1]["role"] == "assistant":
                                 chat_history_pairs.append((messages[i]["content"], messages[i + 1]["content"]))
                 
-                result = self.qa_chain.invoke({
-                    "question": message,
-                    "chat_history": chat_history_pairs
-                })
+                # システムプロンプトが指定されている場合は一時的なQAチェーンを作成
+                if system_prompt:
+                    temp_qa_chain = self._create_qa_chain(self.llm, include_prompt=True, system_prompt=system_prompt)
+                    result = temp_qa_chain.invoke({
+                        "question": message,
+                        "chat_history": chat_history_pairs
+                    })
+                else:
+                    result = self.qa_chain.invoke({
+                        "question": message,
+                        "chat_history": chat_history_pairs
+                    })
                 
                 # Extract response and source documents
                 self.log_debug(f"QA chain result type: {type(result)}")
@@ -263,7 +281,7 @@ class ChatService(BaseService):
                 
                 # ConversationalRetrievalChain returns response in 'result' key
                 if isinstance(result, dict):
-                    response = result.get("result", str(result))
+                    response = result.get("answer", str(result))
                     source_documents = []
                     
                     # Extract source documents if available
@@ -365,7 +383,8 @@ class ChatService(BaseService):
     async def stream_message(
         self,
         message: str,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        system_prompt: Optional[str] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream a chat response"""
         self.ensure_initialized()
@@ -417,7 +436,7 @@ class ChatService(BaseService):
             # Create temporary QA chain with streaming LLM
             if qdrant_manager._initialized and qdrant_manager.vectorstore:
                 # Create QA chain using helper method
-                qa_chain = self._create_qa_chain(streaming_llm)
+                qa_chain = self._create_qa_chain(streaming_llm, include_prompt=True, system_prompt=system_prompt)
                 
                 # Process message with streaming QA chain
                 # Format chat history for ConversationalRetrievalChain
