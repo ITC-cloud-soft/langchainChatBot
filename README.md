@@ -73,7 +73,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```bash
 cd frontend
 npm install
-npm start
+npm run dev
 ```
 
 ### 環境変数
