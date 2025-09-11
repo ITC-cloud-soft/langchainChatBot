@@ -297,7 +297,6 @@ const KnowledgePage: React.FC = () => {
       {collectionInfo && (
         <Alert severity="info" sx={{ mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <InfoIcon sx={{ mr: 1 }} />
             <Typography>
               現在のコレクション: {collectionInfo.name} ({collectionInfo.count} ドキュメント)
             </Typography>

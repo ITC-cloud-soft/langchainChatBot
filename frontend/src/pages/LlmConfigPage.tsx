@@ -69,8 +69,11 @@ interface EmbeddingConfigResponse {
 }
 
 interface TestResponse {
-  status: 'success' | 'error';
+  status: 'success' | 'error' | 'warning';
   message: string;
+  vector_db_recreated?: boolean;
+  old_dimension?: number;
+  new_dimension?: number;
 }
 
 type TabValue = 'llm' | 'embedding';
@@ -83,11 +86,17 @@ const LlmConfigPage: React.FC = () => {
   const [availableEmbeddingModels, setAvailableEmbeddingModels] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isTesting, setIsTesting] = useState(false);
-  const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error' | 'warning'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const [dimensionDialogOpen, setDimensionDialogOpen] = useState(false);
   const [isDimensionEditable, setIsDimensionEditable] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
+
+  // 現在の埋め込み設定を保存（次元数変更検出用）
+  const [originalEmbeddingConfig, setOriginalEmbeddingConfig] = useState<EmbeddingConfig | null>(null);
+  
+  // 次元数変更確認ポップアップ
+  const [dimensionChangeConfirmOpen, setDimensionChangeConfirmOpen] = useState(false);
 
   const loadConfig = useCallback(async () => {
     setIsLoading(true);
@@ -145,6 +154,8 @@ const LlmConfigPage: React.FC = () => {
       const response = (await embeddingConfigApi.getConfig()) as EmbeddingConfigResponse;
       console.log('Embedding config response:', response);
       
+      // 元の設定を保存（次元数変更検出用）
+      setOriginalEmbeddingConfig(response.config);
       setEmbeddingConfig(response.config);
       
       // Also set available models from the config response
@@ -161,13 +172,15 @@ const LlmConfigPage: React.FC = () => {
         (error as Error).message || '埋め込み設定の読み込み中にエラーが発生しました';
       enqueueSnackbar(errorMessage, { variant: 'error' });
       // エラー時にデフォルト設定をセット
-      setEmbeddingConfig({
+      const defaultConfig = {
         provider: 'ollama',
         base_url: 'http://localhost:11434',
         model_name: 'nomic-embed-text:latest',
         api_key: '',
         dimension: 768,
-      });
+      };
+      setOriginalEmbeddingConfig(defaultConfig);
+      setEmbeddingConfig(defaultConfig);
     }
   }, [enqueueSnackbar]);
 
@@ -774,16 +787,86 @@ const LlmConfigPage: React.FC = () => {
   };
 
   const handleSaveEmbeddingConfig = async () => {
-    if (!embeddingConfig) return;
+    if (!embeddingConfig || !originalEmbeddingConfig) return;
+    
+    // 次元数が変更されたかチェック
+    const dimensionChanged = originalEmbeddingConfig.dimension !== embeddingConfig.dimension;
+    
+    if (dimensionChanged) {
+      // 次元数が変更された場合は確認ポップアップを表示
+      setDimensionChangeConfirmOpen(true);
+      return;
+    }
+    
+    // 次元数が変更されていない場合は通常保存
+    await performSaveEmbeddingConfig();
+  };
+
+  const performSaveEmbeddingConfig = async () => {
+    if (!embeddingConfig || !originalEmbeddingConfig) return;
     setIsLoading(true);
+    
+    // 次元数が変更されたかチェック
+    const dimensionChanged = originalEmbeddingConfig.dimension !== embeddingConfig.dimension;
+    
     try {
-      await embeddingConfigApi.updateConfig(embeddingConfig as unknown as Record<string, unknown>);
-      enqueueSnackbar('埋め込み設定を保存しました', { variant: 'success' });
+      const response = (await embeddingConfigApi.updateConfig(embeddingConfig as unknown as Record<string, unknown>)) as TestResponse;
+      
+      // レスポンスを解析して適切なメッセージを表示
+      if (response.vector_db_recreated) {
+        // ベクトルDBが再作成された場合
+        enqueueSnackbar(response.message, { variant: 'success' });
+        
+        // 再作成の詳細情報を表示
+        if (response.old_dimension && response.new_dimension) {
+          enqueueSnackbar(
+            `ベクトルデータベースを次元数 ${response.old_dimension} から ${response.new_dimension} に再作成しました`, 
+            { variant: 'info' }
+          );
+        }
+      } else if (dimensionChanged && response.status === 'warning') {
+        // 次元数は変更されたが、ベクトルDB再作成に失敗した場合
+        enqueueSnackbar(response.message, { variant: 'warning' });
+        
+        if (response.old_dimension && response.new_dimension) {
+          enqueueSnackbar(
+            `手動でベクトルデータベースを再作成してください（次元数: ${response.old_dimension} → ${response.new_dimension}）`, 
+            { variant: 'warning' }
+          );
+        }
+      } else if (dimensionChanged) {
+        // 次元数が変更されたが、ベクトルDB再作成情報がない場合
+        enqueueSnackbar('埋め込み設定を保存しました。ベクトルデータベースの再作成が必要です。', { variant: 'warning' });
+      } else {
+        // 次元数が変更されていない場合
+        enqueueSnackbar('埋め込み設定を保存しました', { variant: 'success' });
+      }
+      
+      // 元の設定を更新
+      setOriginalEmbeddingConfig(embeddingConfig);
+      
     } catch (error) {
       logger.error('Error saving embedding config:', error);
       enqueueSnackbar('埋め込み設定の保存中にエラーが発生しました', { variant: 'error' });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleConfirmDimensionChange = () => {
+    setDimensionChangeConfirmOpen(false);
+    performSaveEmbeddingConfig();
+  };
+
+  const handleCancelDimensionChange = () => {
+    setDimensionChangeConfirmOpen(false);
+    // 元の次元数に戻す
+    if (originalEmbeddingConfig && embeddingConfig) {
+      setEmbeddingConfig({
+        ...embeddingConfig,
+        dimension: originalEmbeddingConfig.dimension
+      });
+      enqueueSnackbar('ベクトル次元数の変更をキャンセルしました', { variant: 'info' });
     }
   };
 
@@ -797,11 +880,18 @@ const LlmConfigPage: React.FC = () => {
       const response = (await embeddingConfigApi.testConfig(
         embeddingConfig as unknown as Record<string, unknown>,
       )) as TestResponse;
-      setTestStatus(response.status === 'success' ? 'success' : 'error');
+      setTestStatus(response.status);
       setTestMessage(response.message);
 
       if (response.status === 'success') {
         enqueueSnackbar('埋め込み設定テストに成功しました', { variant: 'success' });
+        
+        // ベクトルDB再作成の情報があれば表示
+        if (response.vector_db_recreated) {
+          enqueueSnackbar(response.message, { variant: 'info' });
+        }
+      } else if (response.status === 'warning') {
+        enqueueSnackbar(response.message, { variant: 'warning' });
       } else {
         enqueueSnackbar('埋め込み設定テストに失敗しました', { variant: 'error' });
       }
@@ -1137,8 +1227,8 @@ const LlmConfigPage: React.FC = () => {
 
                 {testStatus !== 'idle' && (
                   <Alert
-                    severity={testStatus === 'success' ? 'success' : 'error'}
-                    icon={testStatus === 'success' ? <CheckIcon /> : <ErrorIcon />}
+                    severity={testStatus}
+                    icon={testStatus === 'success' ? <CheckIcon /> : testStatus === 'error' ? <ErrorIcon /> : undefined}
                     sx={{ mb: 2 }}
                   >
                     {testMessage}
@@ -1420,8 +1510,8 @@ const LlmConfigPage: React.FC = () => {
 
                 {testStatus !== 'idle' && (
                   <Alert
-                    severity={testStatus === 'success' ? 'success' : 'error'}
-                    icon={testStatus === 'success' ? <CheckIcon /> : <ErrorIcon />}
+                    severity={testStatus}
+                    icon={testStatus === 'success' ? <CheckIcon /> : testStatus === 'error' ? <ErrorIcon /> : undefined}
                     sx={{ mb: 2 }}
                   >
                     {testMessage}
@@ -1453,6 +1543,55 @@ const LlmConfigPage: React.FC = () => {
           </Grid>
         </Grid>
       )}
+
+      {/* ベクトル次元数変更確認ポップアップ */}
+      <Dialog
+        open={dimensionChangeConfirmOpen}
+        onClose={() => setDimensionChangeConfirmOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="h6" sx={{ color: 'warning.main' }}>
+              ⚠️ ベクトル次元数の変更確認
+            </Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            <Typography variant="body1" paragraph>
+              <strong>ベクトル次元数の変更を検出:</strong>
+            </Typography>
+            <Typography variant="body2" component="div" sx={{ ml: 2 }}>
+              <ul>
+                <li>次元数を {originalEmbeddingConfig?.dimension} から {embeddingConfig?.dimension} に変更します</li>
+                <li>ベクトルデータベースが自動的に再作成されます</li>
+                <li>既存のナレッジベースデータはすべて削除されます</li>
+                <li>変更後はドキュメントを再アップロードする必要があります</li>
+              </ul>
+            </Typography>
+            <Typography variant="body2" paragraph sx={{ mt: 2 }}>
+              この操作は元に戻せません。続行しますか？
+            </Typography>
+          </Alert>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={handleCancelDimensionChange}
+            variant="outlined"
+          >
+            いいえ
+          </Button>
+          <Button 
+            onClick={handleConfirmDimensionChange}
+            variant="contained"
+            color="warning"
+          >
+            はい
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ベクトル次元数編集確認ダイアログ */}
       <Dialog

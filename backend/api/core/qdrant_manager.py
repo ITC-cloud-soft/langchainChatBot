@@ -35,6 +35,81 @@ class QdrantManager:
         self.embeddings = None
         self.collection_name = settings.QDRANT_COLLECTION_NAME
     
+    async def get_collection_dimension(self) -> Optional[int]:
+        """Get the current collection's vector dimension"""
+        if not self.client:
+            return None
+        
+        try:
+            collection_info = self.client.get_collection(self.collection_name)
+            if hasattr(collection_info.config.params, 'vectors'):
+                vectors_config = collection_info.config.params.vectors
+                if isinstance(vectors_config, dict):
+                    return vectors_config.get('size')
+                elif hasattr(vectors_config, 'size'):
+                    return vectors_config.size
+            return None
+        except Exception as e:
+            logger.warning(f"Error getting collection dimension: {e}")
+            return None
+    
+    async def get_actual_embedding_dimension(self) -> int:
+        """Get the actual dimension of the embedding model"""
+        try:
+            # Try to get dimension by embedding a test text
+            test_text = "test"
+            # Note: embed_query might be synchronous, so we don't await it
+            embedding = self.embeddings.embed_query(test_text)
+            return len(embedding)
+        except Exception as e:
+            logger.warning(f"Could not determine actual embedding dimension: {e}")
+            # Fallback to setting
+            return settings.EMBEDDING_DIMENSION
+    
+    async def recreate_collection_with_new_dimension(self) -> bool:
+        """Recreate collection with new dimension from settings"""
+        if not self.client:
+            return False
+        
+        try:
+            # Get actual embedding dimension
+            actual_dimension = await self.get_actual_embedding_dimension()
+            logger.warning(f"Recreating collection {self.collection_name}")
+            logger.warning(f"  Configured dimension: {settings.EMBEDDING_DIMENSION}")
+            logger.warning(f"  Actual embedding dimension: {actual_dimension}")
+            
+            # Use actual dimension for collection creation
+            collection_dimension = actual_dimension
+            
+            # Update settings if actual dimension differs
+            if actual_dimension != settings.EMBEDDING_DIMENSION:
+                logger.warning(f"  Updating dimension setting to match actual: {actual_dimension}")
+                # Note: In a real implementation, you might want to update the config file
+                # For now, we'll use the actual dimension for collection creation
+            
+            # Delete existing collection
+            try:
+                self.client.delete_collection(self.collection_name)
+                logger.info(f"Deleted existing collection: {self.collection_name}")
+            except Exception as e:
+                logger.warning(f"Collection deletion failed (may not exist): {e}")
+            
+            # Create new collection with correct dimension
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(
+                    size=collection_dimension,
+                    distance=Distance.COSINE
+                )
+            )
+            logger.info(f"Created new collection with dimension {collection_dimension}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error recreating collection: {e}")
+            return False
+    
     async def initialize(self) -> bool:
         """Initialize Qdrant connection and create collection if needed"""
         try:
@@ -100,14 +175,14 @@ class QdrantManager:
                         self.model_name = model_name
                     
                     def embed_documents(self, texts):
-                        # Return mock embeddings (768 dimensions like nomic-embed-text)
+                        # Return mock embeddings (configurable dimensions)
                         import numpy as np
-                        return [np.random.rand(768).tolist() for _ in texts]
+                        return [np.random.rand(settings.EMBEDDING_DIMENSION).tolist() for _ in texts]
                     
                     def embed_query(self, text):
                         # Return mock embedding for query
                         import numpy as np
-                        return np.random.rand(768).tolist()
+                        return np.random.rand(settings.EMBEDDING_DIMENSION).tolist()
                 
                 self.embeddings = MockEmbeddings(model_name=settings.EMBEDDING_MODEL_NAME)
                 embeddings_initialized = True
@@ -151,27 +226,70 @@ class QdrantManager:
                 self._initialized = True
                 return True
                 
-            # Create collection if it doesn't exist
+            # Handle collection creation and dimension mismatch
             try:
                 collections = self.client.get_collections().collections
                 collection_names = [c.name for c in collections]
                 
                 if self.collection_name not in collection_names:
+                    # Collection doesn't exist, create it
                     logger.info(f"Creating collection: {self.collection_name}")
                     self.client.create_collection(
                         collection_name=self.collection_name,
                         vectors_config=VectorParams(
-                            size=768,  # Ollama nomic-embed-text dimension
+                            size=settings.EMBEDDING_DIMENSION,
                             distance=Distance.COSINE
                         )
                     )
+                else:
+                    # Collection exists, check dimension compatibility
+                    current_dimension = await self.get_collection_dimension()
+                    actual_embedding_dimension = await self.get_actual_embedding_dimension()
+                    
+                    if current_dimension is not None and current_dimension != actual_embedding_dimension:
+                        logger.warning(f"Dimension mismatch detected!")
+                        logger.warning(f"  Collection dimension: {current_dimension}")
+                        logger.warning(f"  Actual embedding dimension: {actual_embedding_dimension}")
+                        logger.warning(f"  Configured dimension: {settings.EMBEDDING_DIMENSION}")
+                        logger.warning(f"  Recreating collection with correct dimension...")
+                        
+                        # Recreate collection with correct dimension
+                        if await self.recreate_collection_with_new_dimension():
+                            logger.info("Collection recreated successfully with new dimension")
+                            # Continue with vectorstore initialization after recreation
+                        else:
+                            logger.error("Failed to recreate collection with new dimension")
+                            self.vectorstore = None
+                            self._initialized = True
+                            return True
+                    elif actual_embedding_dimension != settings.EMBEDDING_DIMENSION:
+                        logger.warning(f"Configuration mismatch detected!")
+                        logger.warning(f"  Configured dimension: {settings.EMBEDDING_DIMENSION}")
+                        logger.warning(f"  Actual embedding dimension: {actual_embedding_dimension}")
+                        logger.warning(f"  Consider updating config.toml to match actual dimension")
                 
                 # Initialize LangChain vectorstore
-                self.vectorstore = LangchainQdrant(
-                    client=self.client,
-                    collection_name=self.collection_name,
-                    embedding=self.embeddings
-                )
+                try:
+                    # Check dimensions first
+                    actual_embedding_dimension = await self.get_actual_embedding_dimension()
+                    current_collection_dimension = await self.get_collection_dimension()
+                    
+                    logger.info(f"Initializing LangChain Qdrant vectorstore")
+                    logger.info(f"  Collection dimension: {current_collection_dimension}")
+                    logger.info(f"  Embedding dimension: {actual_embedding_dimension}")
+                    
+                    # Initialize LangChain vectorstore (without force_recreate param)
+                    self.vectorstore = LangchainQdrant(
+                        client=self.client,
+                        collection_name=self.collection_name,
+                        embedding=self.embeddings
+                    )
+                    logger.info("LangChain Qdrant vectorstore initialized successfully")
+                except Exception as e:
+                    logger.warning(f"LangChain Qdrant initialization failed: {e}")
+                    # Fallback: create vectorstore without LangChain wrapper
+                    logger.info("Using direct Qdrant client operations instead of LangChain wrapper")
+                    self.vectorstore = None
                 
                 logger.info("Qdrant manager initialized successfully")
                 self._initialized = True
@@ -406,7 +524,7 @@ class QdrantManager:
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(
-                    size=768,
+                    size=settings.EMBEDDING_DIMENSION,  # Use configured dimension
                     distance=Distance.COSINE
                 )
             )

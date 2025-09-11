@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from api.core.config_manager import settings, config_manager
 from api.core.utils import handle_exceptions, default_logger, format_success_response
+from api.core.qdrant_manager import qdrant_manager
 
 # Create router
 router = APIRouter()
@@ -36,6 +37,9 @@ class ConfigStatus(BaseModel):
     """Configuration status model"""
     status: str
     message: str
+    vector_db_recreated: bool = False
+    old_dimension: int = None
+    new_dimension: int = None
 
 
 async def get_embedding_models_from_api(base_url: str, api_key: str = "", provider: str = "ollama") -> List[str]:
@@ -183,6 +187,9 @@ async def get_embedding_config():
 @router.post("/config", response_model=ConfigStatus)
 async def update_embedding_config(config: EmbeddingConfig):
     """Update embedding configuration"""
+    # Get current dimension for comparison
+    current_dimension = config_manager.get_value("embedding", "dimension") or 768
+    
     # Update configuration using config manager
     result = config_manager.set_value("embedding", "provider", config.provider)
     if not result.success:
@@ -203,18 +210,61 @@ async def update_embedding_config(config: EmbeddingConfig):
     os.environ["EMBEDDING_API_KEY"] = config.api_key
     os.environ["EMBEDDING_DIMENSION"] = str(config.dimension)
     
-    return ConfigStatus(
-        status="success",
-        message="Embedding configuration updated successfully"
-    )
+    # Check if dimension changed
+    vector_db_recreated = False
+    if current_dimension != config.dimension:
+        default_logger.info(f"Embedding dimension changed from {current_dimension} to {config.dimension}")
+        default_logger.warning("Vector database needs to be recreated due to dimension change")
+        
+        try:
+            # Recreate vector database with new dimension
+            success = await qdrant_manager.recreate_collection_with_new_dimension(config.dimension)
+            if success:
+                vector_db_recreated = True
+                return ConfigStatus(
+                    status="success",
+                    message=f"Embedding configuration updated successfully. Vector database recreated with new dimension ({config.dimension}).",
+                    vector_db_recreated=True,
+                    old_dimension=current_dimension,
+                    new_dimension=config.dimension
+                )
+            else:
+                return ConfigStatus(
+                    status="warning",
+                    message=f"Embedding configuration updated but vector database recreation failed. Manual recreation may be required.",
+                    vector_db_recreated=False,
+                    old_dimension=current_dimension,
+                    new_dimension=config.dimension
+                )
+        except Exception as e:
+            default_logger.error(f"Error recreating vector database: {e}")
+            return ConfigStatus(
+                status="warning",
+                message=f"Embedding configuration updated but vector database recreation failed: {str(e)}",
+                vector_db_recreated=False,
+                old_dimension=current_dimension,
+                new_dimension=config.dimension
+            )
+    else:
+        return ConfigStatus(
+            status="success",
+            message="Embedding configuration updated successfully"
+        )
 
 @router.post("/config/test", response_model=ConfigStatus)
 async def test_embedding_config(config: EmbeddingConfig):
     """Test embedding configuration"""
     try:
         # Import here to avoid circular imports
-        from langchain.embeddings import OllamaEmbeddings
-        from langchain.embeddings.openai import OpenAIEmbeddings
+        try:
+            from langchain_ollama import OllamaEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import OllamaEmbeddings
+        
+        try:
+            from langchain_openai import OpenAIEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import OpenAIEmbeddings
         
         # Create a test embedding instance based on provider
         if config.provider == "ollama":
