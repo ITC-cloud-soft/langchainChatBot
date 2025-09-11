@@ -183,8 +183,14 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 #### フロントエンドの開発
 ```bash
 cd frontend
+
 pnpm install
 pnpm dev              # http://localhost:3000
+```
+or
+```bash
+npm install
+npm run dev
 ```
 
 ### Docker開発
