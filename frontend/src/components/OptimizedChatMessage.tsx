@@ -161,20 +161,60 @@ const OptimizedChatMessage: React.FC<OptimizedChatMessageProps> = memo(({ messag
         }}
       >
         <Paper
-          elevation={1}
+          elevation={0}
           sx={{
-            p: { xs: 1.5, sm: 2 },
+            p: { xs: 1.5, sm: 2.5 },
             backgroundColor:
-              message.role === 'user' ? alpha(theme.palette.primary.main, 0.1) : 'background.paper',
-            color: message.role === 'user' ? 'text.primary' : 'text.primary',
-            borderRadius: message.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-            transition: 'all 0.2s ease',
-            '&:hover': {
-              transform: 'translateY(-1px)',
-              boxShadow: 2,
-            },
+              message.role === 'user'
+                ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                : 'rgba(255, 255, 255, 0.95)',
+            color: '#000000 !important',
+            borderRadius: message.role === 'user' ? '20px 20px 6px 20px' : '20px 20px 20px 6px',
+            backdropFilter: 'blur(10px)',
+            border: message.role === 'user' ? 'none' : '1px solid rgba(0, 0, 0, 0.08)',
+            boxShadow: message.role === 'user'
+              ? '0 8px 32px rgba(102, 126, 234, 0.3)'
+              : '0 4px 12px rgba(0, 0, 0, 0.08)',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             position: 'relative',
             wordBreak: 'break-word',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              bottom: 0,
+              [message.role === 'user' ? 'right' : 'left']: '16px',
+              width: 0,
+              height: 0,
+              border: '8px solid transparent',
+              borderBottom: 0,
+              borderTopColor: message.role === 'user' ? '#764ba2' : 'rgba(255, 255, 255, 0.95)',
+              filter: message.role === 'user' ? 'none' : 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1))',
+            },
+            '&:hover': {
+              transform: 'translateY(-2px) scale(1.02)',
+              boxShadow: message.role === 'user'
+                ? '0 12px 40px rgba(102, 126, 234, 0.4)'
+                : '0 8px 25px rgba(0, 0, 0, 0.12)',
+            },
+            animation: isLast ? 'slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
+            '@keyframes loading-blink': {
+              '0%': { opacity: 1 },
+              '50%': { opacity: 0.4 },
+              '100%': { opacity: 1 },
+            },
+            ...(message.content === '応答を待っています...' && {
+              animation: 'loading-blink 1.5s infinite ease-in-out',
+            }),
+            '@keyframes slideIn': {
+              '0%': {
+                opacity: 0,
+                transform: `translateY(20px) ${message.role === 'user' ? 'translateX(20px)' : 'translateX(-20px)'}`,
+              },
+              '100%': {
+                opacity: 1,
+                transform: 'translateY(0) translateX(0)',
+              },
+            },
           }}
         >
           {/* メッセージコンテンツ */}
@@ -183,12 +223,20 @@ const OptimizedChatMessage: React.FC<OptimizedChatMessageProps> = memo(({ messag
             component="div"
             sx={{
               lineHeight: 1.6,
-              '& p': { margin: 0 },
+              color: '#000000 !important',
+              '& p': { 
+                margin: 0,
+                color: '#000000 !important'
+              },
+              '& *': {
+                color: '#000000 !important'
+              },
               '& code': {
                 backgroundColor: alpha(theme.palette.primary.main, 0.1),
                 padding: '0.2em 0.4em',
                 borderRadius: '3px',
                 fontSize: '0.9em',
+                color: '#000000 !important'
               },
               '& pre': {
                 backgroundColor: alpha(theme.palette.primary.main, 0.05),
@@ -196,6 +244,7 @@ const OptimizedChatMessage: React.FC<OptimizedChatMessageProps> = memo(({ messag
                 borderRadius: '4px',
                 overflow: 'auto',
                 fontSize: '0.9em',
+                color: '#000000 !important'
               },
             }}
           >

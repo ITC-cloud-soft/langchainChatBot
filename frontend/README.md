@@ -1,190 +1,181 @@
-# Chatbot Frontend
+# チャットボットフロントエンド
 
 React + TypeScriptを使用したチャットボットフロントエンドアプリケーションです。Material-UIを採用し、チャット機能、LLM設定管理、ナレッジベース管理を提供します。
 
-## Features
+## 機能
 
-- **リアルタイムチャット**: WebSocketによるストリーミングチャット
-- **LLM設定管理**: API設定、モデル選択、パラメータ調整
-- **ナレッジベース管理**: ドキュメントのアップロード、検索、管理
-- **レスポンシブデザイン**: Material-UIによるモダンなUI
-- **マークダウン対応**: チャットメッセージのマークダウン表示
+- **リアルタイムチャット**: WebSocketによるストリーミングチャット、セッション管理、参照ドキュメント表示、Markdownサポート、自動スクロールインターフェース。
+- **LLM設定管理**: 動的設定、モデル選択、パラメータ調整、設定テスト、リセット機能。
+- **ナレッジベース管理**: ドキュメントアップロード、ディレクトリバッチ処理、検索、CRUD操作。
+- **レスポンシブデザイン**: Material-UIによるモダンなUI。
+- **パフォーマンス最適化**: 仮想化メッセージリスト、コードスプリッティング、メモ化。
 
-## Technology Stack
+## 技術スタック
 
 - **React 18**: モダンなUIフレームワーク
 - **TypeScript**: 型安全な開発
 - **Material-UI v5**: UIコンポーネントライブラリ
 - **React Router v6**: ルーティング
-- **Axios**: HTTPクライアント
+- **Axios**: HTTPクライアント（インターセプター付き）
 - **React Hook Form**: フォーム管理
 - **notistack**: 通知コンポーネント
 - **react-markdown**: マークダウン表示
 - **Vite**: ビルドツール
+- **pnpm**: パッケージマネージャー（推奨）
+- **テスト**: Vitest + React Testing Library
 
-## Installation
+## インストール
 
-### Prerequisites
+### 前提条件
 
 - Node.js >= 16.0.0
-- npm or yarn or pnpm
+- pnpm（推奨）
 
-### Setup
+### セットアップ
 
 ```bash
-# Navigate to frontend directory
+# frontendディレクトリに移動
 cd frontend
 
-# Install dependencies
-npm install
-# or
-yarn install
-# or
+# 依存関係インストール
 pnpm install
 
-# Create environment file
+# 環境ファイル作成
 cp .env.example .env
-# Edit .env with your API URL
+# .envを編集してAPI URLを設定
 ```
 
-## Development
+## 開発
 
-### Start Development Server
+### 開発サーバー起動
 
 ```bash
-# Development server
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
+# 開発サーバー
+pnpm dev              # http://localhost:3000
 
-# HTTPS development server
-npm run dev:https
-# or
-yarn dev:https
-# or
+# HTTPS開発サーバー
 pnpm dev:https
+
+# ビルドとテスト
+pnpm build            # 本番ビルド
+pnpm test             # テスト実行
+pnpm test:coverage    # カバレッジレポート
+pnpm test:unit        # ユニットテスト
+pnpm test:integration # インテグレーションテスト
+
+# コード品質
+pnpm lint             # ESLint
+pnpm lint:fix         # ESLint自動修正
+pnpm type-check       # TypeScript検証
+pnpm format           # Prettierフォーマット
 ```
 
-Access the application at http://localhost:3000
+アプリケーションに http://localhost:3000 でアクセス。
 
-### Build for Production
+### 本番ビルド
 
 ```bash
-# Build for production
-npm run build
-# or
-yarn build
-# or
+# 本番ビルド
 pnpm build
 
-# Preview production build
-npm run preview
-# or
-yarn preview
-# or
+# 本番ビルドプレビュー
 pnpm preview
 
-# Clean build artifacts
-npm run build:clean
-# or
-yarn build:clean
-# or
+# ビルドアーティファクトクリーン
 pnpm build:clean
 ```
 
-## Environment Variables
+## 環境変数
 
-Create a `.env` file in the frontend directory:
+frontendディレクトリに `.env` ファイルを作成：
 
 ```env
-# Backend API URL
+# バックエンドAPI URL
 REACT_APP_API_URL=http://localhost:8000
 
-# Environment (development/production)
+# 環境（development/production）
 REACT_APP_ENVIRONMENT=development
 
-# Log level (debug/info/warn/error)
+# ログレベル（debug/info/warn/error）
 REACT_APP_LOG_LEVEL=info
 
-# Version information
+# バージョン情報
 REACT_APP_VERSION=1.0.0
 ```
 
-## Project Structure
+## プロジェクト構造
 
 ```
-src/
-├── components/           # Reusable UI components
-│   ├── Layout.tsx       # Main layout component
-│   └── common/          # Shared components
-│       ├── DataTable.tsx
-│       ├── ErrorAlert.tsx
-│       ├── FileUploadArea.tsx
-│       ├── LoadingSpinner.tsx
-│       ├── PageContainer.tsx
-│       ├── SearchBar.tsx
-│       └── StatusChip.tsx
-├── pages/               # Page components
-│   ├── ChatPage.tsx     # Chat interface
-│   ├── LlmConfigPage.tsx # LLM configuration
-│   └── KnowledgePage.tsx # Knowledge base management
-├── services/            # API services
-│   └── api.ts          # API client and types
-├── hooks/              # Custom React hooks
-│   ├── useApi.ts       # API communication
-│   └── useConfig.ts    # Configuration management
-├── utils/              # Utility functions
-│   ├── config.ts       # Configuration utilities
-│   ├── index.ts        # General utilities
-│   └── logger.ts       # Logging utilities
-└── App.tsx             # Main application component
+frontend/src/
+├── components/           # 再利用可能なUIコンポーネント
+│   ├── common/          # 共有コンポーネント (DataTable, ErrorAlert, FileUploadArea, LoadingSpinner, PageContainer, SearchBar, StatusChip など)
+│   ├── ChatInput.tsx    # チャット入力コンポーネント
+│   ├── Layout.tsx       # メイン layout
+│   └── VirtualizedMessageList.tsx  # パフォーマンス最適化メッセージリスト
+├── pages/               # ページコンポーネント
+│   ├── ChatPage.tsx     # チャットインターフェース
+│   ├── LlmConfigPage.tsx # LLM設定
+│   └── KnowledgePage.tsx # ナレッジベース管理
+├── hooks/              # カスタムReact hooks
+│   ├── useApi.ts       # API通信
+│   ├── useChatState.ts # チャット状態管理
+│   └── useConfig.ts    # 設定管理
+├── services/           # APIサービス
+│   └── api.ts          # 中央APIクライアント
+└── utils/              # ユーティリティ関数
+    ├── config.ts       # 設定ユーティリティ
+    ├── index.ts        # 一般ユーティリティ
+    └── logger.ts       # ログユーティリティ
 ```
 
-## Key Features
+## キー機能
 
-### Chat Interface
-- Real-time message streaming
-- Session management
-- Reference document display
-- Markdown support
-- Auto-scrolling
-- Message history
+### チャットインターフェース
 
-### LLM Configuration
-- Import/export settings
-- Model selection
-- Parameter adjustment
-- Configuration testing
-- Reset to defaults
+- リアルタイムメッセージストリーミング
+- セッション管理
+- 参照ドキュメント表示
+- Markdownサポート
+- 自動スクロール
+- メッセージ履歴
 
-### Knowledge Base Management
-- Document upload
-- Directory batch upload
-- Document search
-- Collection management
-- Document deletion
+### LLM設定
 
-## API Integration
+- 設定のインポート/エクスポート
+- モデル選択
+- パラメータ調整
+- 設定テスト
+- デフォルトリセット
 
-The frontend integrates with the backend API through `src/services/api.ts`:
+### ナレッジベース管理
 
-- **Base URL**: Configurable via `REACT_APP_API_URL`
-- **Authentication**: Bearer token stored in localStorage
-- **Error Handling**: Automatic handling of 401/403/404/500 errors
+- ドキュメントアップロード
+- ディレクトリバッチアップロード
+- ドキュメント検索
+- コレクション管理
+- ドキュメント削除
 
-### API Modules
-- `chatApi`: Chat message sending, streaming, history
-- `llmConfigApi`: LLM configuration CRUD operations
-- `knowledgeApi`: Knowledge base document management
-- `healthApi`: System health checks
-- `configApi`: Configuration management
+## API統合
 
-## Configuration
+フロントエンドは `src/services/api.ts` を通じてバックエンドAPIと統合：
 
-### Path Aliases
-TypeScript path aliases are configured:
+- **ベースURL**: `REACT_APP_API_URL` で設定可能
+- **認証**: localStorageに保存されたBearerトークン
+- **エラーハンドリング**: 401/403/404/500エラーの自動処理
+
+### APIモジュール
+
+- `chatApi`: チャットメッセージ送信、ストリーミング、履歴
+- `llmConfigApi`: LLM設定CRUD操作
+- `knowledgeApi`: ナレッジベースドキュメント管理
+- `healthApi`: システムヘルスチェック
+- `configApi`: 設定管理
+
+## 設定
+
+### パスエイリアス
+
+TypeScriptパスエイリアス設定:
 - `@/*` → `src/*`
 - `@/components/*` → `src/components/*`
 - `@/utils/*` → `src/utils/*`
@@ -192,23 +183,51 @@ TypeScript path aliases are configured:
 - `@/pages/*` → `src/pages/*`
 - `@/services/*` → `src/services/*`
 
-### Backend Connection
-During development, requests are proxied to `http://localhost:8000` via the proxy configuration in `package.json`.
+### バックエンド接続
 
-## Browser Support
+開発中、リクエストは `package.json` のプロキシ設定により `http://localhost:8000` にプロキシされます。
 
-- Chrome (latest)
-- Firefox (latest)
-- Safari (latest)
-- Edge (latest)
+## テスト戦略
 
-## Contributing
+- **フレームワーク**: Vitest with React Testing Library
+- **カバレッジ**: @vitest/coverage-v8 (50%+閾値)
+- **タイプ**: Unit tests, integration tests, component tests
+- **モッキング**: Axiosモッキング via `__mocks__/axios.js`
 
-1. Follow the existing code style
-2. Use TypeScript for type safety
-3. Write tests for new features
-4. Update documentation as needed
+実行:
+```bash
+pnpm test             # すべてのテスト
+pnpm test:coverage    # カバレッジレポート
+```
 
-## License
+## Dockerデプロイ
+
+- **開発**: docker-compose.dev.yml
+- **本番**: docker-compose.prod.yml
+- **ステージング**: docker-compose.staging.yml
+
+サービス:
+- **frontend**: React (port 3000)
+
+ログ確認:
+```bash
+docker-compose logs -f frontend
+```
+
+## ブラウザサポート
+
+- Chrome (最新)
+- Firefox (最新)
+- Safari (最新)
+- Edge (最新)
+
+## 貢献
+
+1. 既存のコードスタイルに従う
+2. TypeScriptで型安全性を確保
+3. 新機能にテストを書く
+4. 必要に応じてドキュメントを更新
+
+## ライセンス
 
 MIT License

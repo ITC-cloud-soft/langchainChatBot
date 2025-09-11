@@ -2,8 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { chatApi } from '../services/api';
 import { useSnackbar } from 'notistack';
 
+// ID生成ユーティリティ
+const generateMessageId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  id: string;
+  role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   sourceDocuments?: Array<{
@@ -57,6 +61,7 @@ export const useChatStreaming = ({
       try {
         // ユーザーメッセージを追加
         const userMessage: ChatMessage = {
+          id: generateMessageId(),
           role: 'user',
           content: message,
           timestamp: new Date().toISOString(),
@@ -64,14 +69,23 @@ export const useChatStreaming = ({
 
         // ローディングメッセージを追加
         const loadingMessage: ChatMessage = {
+          id: generateMessageId(),
           role: 'assistant',
-          content: '',
+          content: '応答を待っています...', // ローディングメッセージ
           timestamp: new Date().toISOString(),
         };
 
         onMessageUpdate(prev => {
           const safePrev = Array.isArray(prev) ? prev : [];
-          return [...safePrev, userMessage, loadingMessage];
+          const newMessages = [...safePrev, userMessage, loadingMessage];
+          console.log('Adding messages to chat:', { 
+            userMessage, 
+            loadingMessage, 
+            prevCount: safePrev.length, 
+            newCount: newMessages.length,
+            newMessages 
+          });
+          return newMessages;
         });
 
         // ストリーミングレスポンスを取得
@@ -125,6 +139,7 @@ export const useChatStreaming = ({
             return [
               ...newMessages,
               {
+                id: generateMessageId(),
                 role: 'assistant',
                 content: 'メッセージの送信が中止されました。',
                 timestamp: new Date().toISOString(),
@@ -142,6 +157,7 @@ export const useChatStreaming = ({
             return [
               ...newMessages,
               {
+                id: generateMessageId(),
                 role: 'assistant',
                 content: '申し訳ありませんが、メッセージの処理中にエラーが発生しました。',
                 timestamp: new Date().toISOString(),

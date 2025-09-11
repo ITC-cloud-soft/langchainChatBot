@@ -7,7 +7,7 @@ This module provides API endpoints for chat functionality.
 import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 import json
@@ -26,6 +26,7 @@ class ChatMessage(BaseModel):
     """Chat message model"""
     message: str
     session_id: Optional[str] = None
+    system_prompt: Optional[str] = None
     
     @field_validator('message')
     @classmethod
@@ -86,27 +87,6 @@ class ChatHistoryResponse(BaseModel):
 
 
 
-class ConnectionManager:
-    """WebSocket connection manager"""
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-
-    async def send_personal_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
-
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
-
-# Global connection manager
-manager = ConnectionManager()
 
 # Chat service is already initialized in main.py
 
@@ -120,12 +100,13 @@ async def send_message(chat_message: ChatMessage):
         # Process message through chat service
         response = await chat_service.process_message(
             message=chat_message.message,
-            session_id=chat_message.session_id
+            session_id=chat_message.session_id,
+            system_prompt=chat_message.system_prompt
         )
         
         return ChatResponse(
             response=response["response"],
-            source_documents=response.get("source_documents"),
+            source_documents=[{"content": doc.get("content"), "metadata": doc.get("metadata")} for doc in response.get("source_documents", [])] if response.get("source_documents") else [],
             session_id=response["session_id"]
         )
     except Exception as e:
@@ -140,7 +121,8 @@ async def stream_message(chat_message: ChatMessage):
     async def generate():
         async for chunk in chat_service.stream_message(
             message=chat_message.message,
-            session_id=chat_message.session_id
+            session_id=chat_message.session_id,
+            system_prompt=chat_message.system_prompt
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
     
@@ -149,30 +131,6 @@ async def stream_message(chat_message: ChatMessage):
         media_type="text/event-stream"
     )
 
-@router.websocket("/ws/{client_id}")
-async def websocket_endpoint(websocket: WebSocket, client_id: int):
-    """WebSocket endpoint for real-time chat"""
-    await manager.connect(websocket)
-    try:
-        while True:
-            # Receive message from client
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-            
-            # Process message
-            response = await chat_service.process_message(
-                message=message_data.get("message", ""),
-                session_id=message_data.get("session_id")
-            )
-            
-            # Send response back to client
-            await manager.send_personal_message(
-                json.dumps(response),
-                websocket
-            )
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        await manager.broadcast(f"Client #{client_id} left the chat")
 
 @router.get("/sessions/{session_id}/history")
 async def get_chat_history(session_id: str):

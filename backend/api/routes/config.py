@@ -112,33 +112,6 @@ async def update_config(request: ConfigUpdateRequest):
         raise HTTPException(status_code=500, detail=f"Error updating config: {str(e)}")
 
 
-@router.get("/get/{section}/{field}", response_model=ConfigGetResponse)
-async def get_config(section: str, field: str):
-    """
-    設定値を取得
-    
-    Args:
-        section: 設定セクション名
-        field: 設定フィールド名
-        
-    Returns:
-        設定取得レスポンス
-    """
-    try:
-        # Get value from config manager
-        value = config_manager.get_value(section, field)
-        if value is None:
-            raise HTTPException(status_code=404, detail=f"Config {section}.{field} not found")
-        
-        return ConfigGetResponse(
-            section=section,
-            field=field,
-            value=value
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting config: {str(e)}")
 
 
 @router.get("/sections", response_model=List[str])
@@ -181,85 +154,8 @@ async def get_section(section: str):
         raise HTTPException(status_code=500, detail=f"Error getting section: {str(e)}")
 
 
-@router.get("/history", response_model=List[ChangeHistoryResponse])
-async def get_change_history(
-    section: Optional[str] = Query(None, description="フィルタリングするセクション名"),
-    field: Optional[str] = Query(None, description="フィルタリングするフィールド名"),
-    limit: Optional[int] = Query(None, ge=1, description="取得する履歴の最大数")
-):
-    """
-    変更履歴を取得
-    
-    Args:
-        section: フィルタリングするセクション名
-        field: フィルタリングするフィールド名
-        limit: 取得する履歴の最大数
-        
-    Returns:
-        変更履歴のリスト
-    """
-    try:
-        # Get change history from config manager
-        history = config_manager.get_change_history(section, field, limit)
-        
-        return [
-            ChangeHistoryResponse(
-                timestamp=datetime.fromtimestamp(change.timestamp),
-                section=change.section,
-                field=change.field,
-                old_value=change.old_value,
-                new_value=change.new_value,
-                user=change.user,
-                description=change.description
-            )
-            for change in history
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting change history: {str(e)}")
 
 
-@router.post("/rollback/{timestamp}")
-async def rollback_config(timestamp: float):
-    """
-    指定したタイムスタンプまで設定をロールバック
-    
-    Args:
-        timestamp: ロールバック先のタイムスタンプ
-        
-    Returns:
-        設定更新レスポンス
-    """
-    try:
-        # Rollback using config manager
-        result = config_manager.rollback_to_timestamp(timestamp)
-        
-        if result.success:
-            changes = [
-                {
-                    "timestamp": datetime.fromtimestamp(change.timestamp).isoformat(),
-                    "section": change.section,
-                    "field": change.field,
-                    "old_value": change.old_value,
-                    "new_value": change.new_value,
-                    "user": change.user,
-                    "description": change.description
-                }
-                for change in result.changes
-            ]
-            
-            return ConfigUpdateResponse(
-                success=True,
-                message=result.message,
-                changes=changes
-            )
-        else:
-            return ConfigUpdateResponse(
-                success=False,
-                message=result.message,
-                changes=[]
-            )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error rolling back config: {str(e)}")
 
 
 @router.post("/export")
