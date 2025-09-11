@@ -35,7 +35,7 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
         sx={{
           flex: 1,
           overflow: 'auto',
-          p: { xs: 2, sm: 4 },
+          p: { xs: 2, sm: 3 },
           backgroundColor: { xs: 'background.default', md: 'grey.50' },
           backgroundImage: {
             xs: 'none',
@@ -96,34 +96,22 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
         sx={{
           flex: 1,
           overflow: 'hidden',
-          p: { xs: 2, md: 3 },
+          p: { xs: 1.5, md: 2 },
           backgroundColor: { xs: 'background.default', md: 'grey.50' },
           backgroundImage: {
             xs: 'none',
             md: 'linear-gradient(180deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0) 100%)'
           },
           minHeight: 0,
-          '&::-webkit-scrollbar': {
-            width: '8px',
-          },
-          '&::-webkit-scrollbar-track': {
-            background: 'rgba(0, 0, 0, 0.1)',
-            borderRadius: '4px',
-          },
-          '&::-webkit-scrollbar-thumb': {
-            background: 'rgba(0, 0, 0, 0.4)',
-            borderRadius: '4px',
-            '&:hover': {
-              background: 'rgba(0, 0, 0, 0.6)',
-            },
-          },
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <Box sx={{ height: '100%', width: '100%' }}>
+        <Box sx={{ flex: 1, width: '100%', overflow: 'hidden' }}>
           <VirtualizedMessageList
             messages={messages}
             itemSize={estimatedItemSize}
-            height={600}
+            height="100%"
             width="100%"
           />
         </Box>
@@ -137,31 +125,18 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
       sx={{
         flex: 1,
         overflow: 'auto',
-        p: { xs: 2, md: 3 },
+        p: { xs: 1.5, md: 2 },
         backgroundColor: { xs: 'background.default', md: 'grey.50' },
         backgroundImage: {
           xs: 'none',
           md: 'linear-gradient(180deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0) 100%)'
         },
         minHeight: 0,
-        maxWidth: '100%',
-        '&::-webkit-scrollbar': {
-          width: '8px',
-        },
-        '&::-webkit-scrollbar-track': {
-          background: 'rgba(0, 0, 0, 0.1)',
-          borderRadius: '4px',
-        },
-        '&::-webkit-scrollbar-thumb': {
-          background: 'rgba(0, 0, 0, 0.4)',
-          borderRadius: '4px',
-          '&:hover': {
-            background: 'rgba(0, 0, 0, 0.6)',
-          },
-        },
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
-      <Box sx={{ maxWidth: '100%', overflow: 'auto', height: '100%' }}>
+      <Box sx={{ flex: 1, overflow: 'auto' }}>
         {messages.map((message, index) => (
           <OptimizedChatMessage
             key={`${message.timestamp}-${index}`}

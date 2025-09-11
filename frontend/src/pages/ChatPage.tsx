@@ -223,6 +223,7 @@ const ChatPage: React.FC = () => {
       sx={{
         height: '100vh',
         maxHeight: '100vh',
+        width: '100%',
         display: 'flex',
         flexDirection: 'column',
         backgroundColor: 'background.default',
@@ -263,10 +264,12 @@ const ChatPage: React.FC = () => {
         anchor="left"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        PaperProps={{
-          sx: {
+        sx={{
+          zIndex: theme.zIndex.drawer,
+          '& .MuiDrawer-paper': {
             width: { xs: 280, sm: 320 },
             backgroundImage: 'linear-gradient(180deg, rgba(0,0,0,0.01) 0%, rgba(0,0,0,0) 100%)',
+            boxShadow: '0 0 20px rgba(0,0,0,0.1)',
           },
         }}
       >
