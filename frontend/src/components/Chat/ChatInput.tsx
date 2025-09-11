@@ -61,15 +61,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       sx={{
         flexShrink: 0,
         height: 'auto',
-        minHeight: '50px',
-        maxHeight: '120px',
+        minHeight: '60px',
+        maxHeight: '140px',
         borderTop: 1,
         borderColor: 'divider',
         backgroundColor: 'background.paper',
-        p: { xs: 1.5, md: 2 },
+        p: { xs: 1, md: 1.5 },
+        pb: { xs: 1.5, md: 2 },
         display: 'flex',
         alignItems: 'flex-end',
-        gap: 1.5,
+        gap: 1,
       }}
     >
       <Box
@@ -132,8 +133,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           onClick={handleSend}
           disabled={isSendDisabled}
           sx={{
-            width: 64,
-            height: 64,
+            width: 52,
+            height: 52,
             borderRadius: 3,
             backgroundColor: isSendDisabled ? 'action.disabledBackground' : 'primary.main',
             color: isSendDisabled ? 'action.disabled' : 'primary.contrastText',
@@ -148,7 +149,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             boxShadow: isSendDisabled ? 'none' : theme.shadows[2],
           }}
         >
-          <SendIcon sx={{ fontSize: '1.5rem' }} />
+          <SendIcon sx={{ fontSize: '1.3rem' }} />
         </IconButton>
       </Box>
     </Box>

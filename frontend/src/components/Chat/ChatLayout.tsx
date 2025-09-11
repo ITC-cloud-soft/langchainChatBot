@@ -20,7 +20,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     <Box
       sx={{
         height: '100vh',
-        maxHeight: '100vh',
+        maxHeight: 'calc(100vh - 0px)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -34,10 +34,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           display: 'flex',
           overflow: 'hidden',
           flexDirection: 'column',
-          height: '100%',
-          maxHeight: '100%',
           minHeight: 0,
-          flexShrink: 0,
         }}
       >
         {/* メインチャットエリア */}
@@ -47,20 +44,23 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             display: 'flex',
             flexDirection: 'column',
             minWidth: 0,
-            height: '100%',
-            maxHeight: '100%',
-            overflow: 'hidden',
-            flexShrink: 0,
+            minHeight: 0,
           }}
         >
           {/* チャットヘッダー */}
-          {header}
+          <Box sx={{ flexShrink: 0 }}>
+            {header}
+          </Box>
 
           {/* チャットメッセージエリア */}
-          {messages}
+          <Box sx={{ flexGrow: 1, minHeight: 0, pb: 0 }}>
+            {messages}
+          </Box>
 
           {/* 入力エリア */}
-          {input}
+          <Box sx={{ flexShrink: 0, pb: 0 }}>
+            {input}
+          </Box>
         </Box>
       </Box>
     </Box>
