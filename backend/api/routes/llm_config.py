@@ -60,7 +60,49 @@ async def get_models_from_api(api_base: str, api_key: str = "") -> List[str]:
         # Normalize API base URL
         api_base = api_base.rstrip('/')
         
-        # Check if it's an OpenAI-compatible API
+        # Check provider based on API base URL and return appropriate models
+        if "anthropic.com" in api_base:
+            # Anthropic models - they don't have a public models endpoint
+            return [
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-haiku-20241022", 
+                "claude-3-sonnet-20240229",
+                "claude-3-opus-20240229",
+                "claude-3-haiku-20240307"
+            ]
+        elif "openai.com" in api_base:
+            # OpenAI models
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                
+                models_url = f"{api_base}/models"
+                response = await client.get(models_url, headers=headers)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    models = data.get("data", [])
+                    return [model["id"] for model in models if "id" in model]
+                else:
+                    # Fallback to common OpenAI models
+                    return [
+                        "gpt-4o",
+                        "gpt-4o-mini", 
+                        "gpt-4-turbo",
+                        "gpt-4",
+                        "gpt-3.5-turbo"
+                    ]
+        elif "generativelanguage.googleapis.com" in api_base:
+            # Google Gemini models
+            return [
+                "gemini-1.5-pro",
+                "gemini-1.5-flash",
+                "gemini-pro",
+                "gemini-pro-vision"
+            ]
+        
+        # For other APIs, try OpenAI-compatible endpoint first
         async with httpx.AsyncClient(timeout=10.0) as client:
             # Set headers
             headers = {"Content-Type": "application/json"}
@@ -114,7 +156,6 @@ async def get_models_from_api(api_base: str, api_key: str = "") -> List[str]:
         return []
 
 
-
 @router.get("/config", response_model=LLMConfigResponse)
 async def get_llm_config():
     """Get current LLM configuration"""
@@ -166,8 +207,19 @@ async def update_llm_config(config: LLMConfig):
     os.environ["OPENAI_MODEL_NAME"] = config.model_name
     os.environ["LLM_PROVIDER"] = config.provider
     
-    # Here you would also reinitialize the LLM in the chat service
-    # For now, we'll just return success
+    # Reinitialize chat service LLM with new configuration
+    try:
+        from api.services.chat_service import chat_service
+        if chat_service._initialized:
+            await chat_service.reinitialize_llm()
+            default_logger.info(f"Chat service LLM reinitialized with provider: {config.provider}")
+    except Exception as e:
+        default_logger.error(f"Error reinitializing chat service LLM: {e}")
+        return ConfigStatus(
+            status="warning",
+            message=f"LLM configuration updated but chat service reinitialize failed: {str(e)}"
+        )
+    
     return ConfigStatus(
         status="success",
         message="LLM configuration updated successfully"
@@ -314,3 +366,27 @@ async def export_llm_config():
         )
     else:
         raise HTTPException(status_code=500, detail="Failed to export LLM configuration")
+
+@router.post("/reinitialize", response_model=ConfigStatus)
+async def reinitialize_chat_service():
+    """Force reinitialize chat service with current LLM configuration"""
+    try:
+        from api.services.chat_service import chat_service
+        success = await chat_service.reinitialize_llm()
+        
+        if success:
+            return ConfigStatus(
+                status="success",
+                message="Chat service LLM reinitialized successfully"
+            )
+        else:
+            return ConfigStatus(
+                status="error",
+                message="Failed to reinitialize chat service LLM"
+            )
+    except Exception as e:
+        default_logger.error(f"Error reinitializing chat service: {e}")
+        return ConfigStatus(
+            status="error",
+            message=f"Error reinitializing chat service: {str(e)}"
+        )

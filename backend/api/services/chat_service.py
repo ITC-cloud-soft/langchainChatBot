@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional, AsyncGenerator
 from datetime import datetime
 
 from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain.chains import RetrievalQA, ConversationalRetrievalChain
 from langchain.prompts import PromptTemplate
 from langchain.callbacks.base import BaseCallbackHandler
@@ -19,7 +20,7 @@ from langchain.schema import Document
 
 from api.core.qdrant_manager import qdrant_manager
 from api.core.database import database_manager
-from api.core.config_manager import settings
+from api.core.config_manager import settings, config_manager
 from api.core.utils import handle_exceptions, default_logger
 from api.services.base_service import BaseService
 from api.services.chat_history_service import chat_history_service
@@ -84,14 +85,8 @@ class ChatService(BaseService):
             if not await chat_history_service.initialize():
                 self.log_warning("Chat history service initialization failed, continuing with in-memory history")
             
-            # Initialize LLM
-            self.llm = ChatOpenAI(
-                base_url=settings.OPENAI_API_BASE,
-                api_key=settings.OPENAI_API_KEY,
-                model=settings.OPENAI_MODEL_NAME,
-                temperature=0.7,
-                streaming=True
-            )
+            # Initialize LLM based on current configuration
+            await self._initialize_llm()
             
             # Setup QA chain
             await self._setup_qa_chain()
@@ -102,7 +97,88 @@ class ChatService(BaseService):
         except Exception as e:
             self.log_error("Error initializing chat service", e)
             return False
-    
+
+    async def _initialize_llm(self):
+        """Initialize LLM based on current configuration"""
+        try:
+            # Get current LLM configuration
+            provider = settings.llm.provider if hasattr(settings, 'llm') else "openai"
+            api_base = settings.llm.api_base if hasattr(settings, 'llm') else settings.OPENAI_API_BASE
+            api_key = settings.llm.api_key if hasattr(settings, 'llm') else settings.OPENAI_API_KEY
+            model_name = settings.llm.model_name if hasattr(settings, 'llm') else settings.OPENAI_MODEL_NAME
+            temperature = settings.llm.temperature if hasattr(settings, 'llm') else 0.7
+            
+            # Debug: Log all configuration values
+            self.log_info(f"Debug config values:")
+            self.log_info(f"  provider from settings: {provider}")
+            self.log_info(f"  api_base: {api_base}")
+            self.log_info(f"  model_name: {model_name}")
+            
+            # Also check config_manager directly
+            provider_from_config = config_manager.get_value("llm", "provider")
+            self.log_info(f"  provider from config_manager: {provider_from_config}")
+            
+            # Use config_manager value if available
+            if provider_from_config:
+                provider = provider_from_config
+                self.log_info(f"  Using provider from config_manager: {provider}")
+            
+            self.log_info(f"Initializing LLM with provider: {provider}, model: {model_name}, api_base: {api_base}")
+            
+            if provider == "anthropic":
+                self.log_info("Creating ChatAnthropic instance")
+                self.llm = ChatAnthropic(
+                    anthropic_api_key=api_key,
+                    model=model_name,
+                    temperature=temperature,
+                    streaming=True
+                )
+            elif provider == "openai":
+                self.log_info("Creating ChatOpenAI instance")
+                self.llm = ChatOpenAI(
+                    base_url=api_base,
+                    api_key=api_key,
+                    model=model_name,
+                    temperature=temperature,
+                    streaming=True
+                )
+            else:
+                # Default to OpenAI-compatible for other providers
+                self.log_info(f"Creating ChatOpenAI instance for provider: {provider}")
+                self.llm = ChatOpenAI(
+                    base_url=api_base,
+                    api_key=api_key,
+                    model=model_name,
+                    temperature=temperature,
+                    streaming=True
+                )
+            
+            self.log_info(f"LLM initialized successfully with provider: {provider}, type: {type(self.llm).__name__}")
+            
+        except Exception as e:
+            self.log_error(f"Error initializing LLM with provider {provider}", e)
+            # Fallback to OpenAI configuration
+            self.llm = ChatOpenAI(
+                base_url=settings.OPENAI_API_BASE,
+                api_key=settings.OPENAI_API_KEY,
+                model=settings.OPENAI_MODEL_NAME,
+                temperature=0.7,
+                streaming=True
+            )
+            self.log_warning("Fallback to OpenAI configuration")
+
+    async def reinitialize_llm(self):
+        """Reinitialize LLM with current configuration (called when config changes)"""
+        try:
+            self.log_info("Reinitializing LLM with updated configuration")
+            await self._initialize_llm()
+            await self._setup_qa_chain()
+            self.log_info("LLM reinitialized successfully")
+            return True
+        except Exception as e:
+            self.log_error("Error reinitializing LLM", e)
+            return False
+
     def _get_prompt_template(self) -> str:
         """プロンプトテンプレートを取得"""
         return settings.chat.prompt_template
@@ -389,6 +465,9 @@ class ChatService(BaseService):
         """Stream a chat response"""
         self.ensure_initialized()
         
+        # Debug: Log current LLM type
+        self.log_info(f"Stream message - LLM type: {type(self.llm).__name__}")
+        
         # Generate session ID if not provided
         if not session_id:
             session_id = str(uuid.uuid4())
@@ -423,15 +502,37 @@ class ChatService(BaseService):
             # Setup streaming callback
             callback = StreamingCallbackHandler()
             
-            # Create LLM with streaming callback
-            streaming_llm = ChatOpenAI(
-                base_url=settings.OPENAI_API_BASE,
-                api_key=settings.OPENAI_API_KEY,
-                model=settings.OPENAI_MODEL_NAME,
-                temperature=0.7,
-                streaming=True,
-                callbacks=[callback]
-            )
+            # Use the correctly initialized LLM instance with streaming callback
+            # Clone the LLM with streaming enabled
+            if hasattr(self.llm, 'model_copy'):
+                # For Pydantic v2 models (newer langchain versions)
+                streaming_llm = self.llm.model_copy(update={"streaming": True, "callbacks": [callback]})
+            else:
+                # Fallback: create new instance based on current LLM type
+                from api.core.config_manager import config_manager
+                provider = config_manager.get_value("llm", "provider") or "openai"
+                api_base = config_manager.get_value("llm", "api_base") or settings.OPENAI_API_BASE
+                api_key = config_manager.get_value("llm", "api_key") or settings.OPENAI_API_KEY
+                model_name = config_manager.get_value("llm", "model_name") or settings.OPENAI_MODEL_NAME
+                
+                if provider == "anthropic":
+                    streaming_llm = ChatAnthropic(
+                        base_url=api_base,
+                        api_key=api_key,
+                        model=model_name,
+                        temperature=0.7,
+                        streaming=True,
+                        callbacks=[callback]
+                    )
+                else:
+                    streaming_llm = ChatOpenAI(
+                        base_url=api_base,
+                        api_key=api_key,
+                        model=model_name,
+                        temperature=0.7,
+                        streaming=True,
+                        callbacks=[callback]
+                    )
             
             # Create temporary QA chain with streaming LLM
             if qdrant_manager._initialized and qdrant_manager.vectorstore:

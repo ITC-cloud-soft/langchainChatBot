@@ -331,84 +331,80 @@ const LlmConfigPage: React.FC = () => {
     // Update config
     handleInputChange('provider', provider);
 
-    // Only set defaults if the current values are empty or invalid
-    let needsApiBaseUpdate = !config.api_base || config.api_base.trim() === '';
-    let needsModelUpdate = !config.model_name || config.model_name.trim() === '';
-
+    // Always update API base and model name when provider changes
     let newApiBase = config.api_base;
     let newModelName = config.model_name;
 
-    if (needsApiBaseUpdate) {
-      switch (provider) {
-        case 'openai':
-          newApiBase = 'https://api.openai.com/v1';
-          break;
-        case 'anthropic':
-          newApiBase = 'https://api.anthropic.com';
-          break;
-        case 'gemini':
-          newApiBase = 'https://generativelanguage.googleapis.com/v1';
-          break;
-        case 'カスタム':
-          newApiBase = 'http://localhost:11434/v1';
-          break;
-        default:
-          newApiBase = 'http://localhost:11434/v1';
-      }
+    // Set provider-specific defaults
+    switch (provider) {
+      case 'openai':
+        newApiBase = 'https://api.openai.com/v1';
+        newModelName = 'gpt-3.5-turbo';
+        break;
+      case 'anthropic':
+        newApiBase = 'https://api.anthropic.com';
+        newModelName = 'claude-3-sonnet-20240229';
+        break;
+      case 'gemini':
+        newApiBase = 'https://generativelanguage.googleapis.com/v1';
+        newModelName = 'gemini-pro';
+        break;
+      case 'カスタム':
+        newApiBase = 'http://localhost:11434/v1';
+        newModelName = '';
+        break;
+      default:
+        newApiBase = 'http://localhost:11434/v1';
+        newModelName = '';
     }
 
-    if (needsModelUpdate) {
-      switch (provider) {
-        case 'openai':
-          newModelName = 'gpt-3.5-turbo';
-          break;
-        case 'anthropic':
-          newModelName = 'claude-3-sonnet-20240229';
-          break;
-        case 'gemini':
-          newModelName = 'gemini-pro';
-          break;
-        case 'カスタム':
-          newModelName = '';
-          break;
-        default:
-          newModelName = '';
-      }
-    }
-
-    // Update API base and model name only if needed
-    if (needsApiBaseUpdate) {
-      handleInputChange('api_base', newApiBase);
-    }
-    if (needsModelUpdate) {
-      handleInputChange('model_name', newModelName);
-    }
+    // Always update API base and model name for provider change
+    handleInputChange('api_base', newApiBase);
+    handleInputChange('model_name', newModelName);
 
     // Try to get models for the new provider
-    if (provider === 'カスタム' && newApiBase) {
-      try {
-        const testConfig = {
-          ...config,
-          provider: provider,
-          api_base: newApiBase,
-        };
-        const response = await llmConfigApi.getModelsFromApi(testConfig);
-        // Handle different response formats
-        if (Array.isArray(response)) {
-          setAvailableModels(response);
-        } else if (response.data && Array.isArray(response.data)) {
-          setAvailableModels(response.data);
-        } else {
-          setAvailableModels([]);
-        }
-        enqueueSnackbar(`${provider}のモデルリストを取得しました`, { variant: 'success' });
-      } catch (error) {
-        logger.error('Error getting models for new provider:', error);
-        // Don't show error for automatic model fetching
+    try {
+      const testConfig = {
+        ...config,
+        provider: provider,
+        api_base: newApiBase,
+      };
+      console.log('=== LLM Provider Change Debug ===');
+      console.log('Provider:', provider);
+      console.log('newModelName:', newModelName);
+      console.log('Calling getModelsFromApi with config:', testConfig);
+      
+      const response = await llmConfigApi.getModelsFromApi(testConfig);
+      console.log('Raw LLM API response:', response);
+      console.log('Response type:', typeof response);
+      console.log('Is array:', Array.isArray(response));
+      
+      // Handle different response formats
+      if (Array.isArray(response)) {
+        console.log('Using direct array response, length:', response.length);
+        setAvailableModels(response);
+      } else if (response.data && Array.isArray(response.data)) {
+        console.log('Using response.data array, length:', response.data.length);
+        setAvailableModels(response.data);
+      } else {
+        console.log('No valid model array found, using empty array');
+        setAvailableModels([]);
       }
-    } else {
-      // For non-カスタム providers, set the current model in available models
+      
+      if (response && response.length > 0) {
+        console.log('Success: Setting models to response array');
+        enqueueSnackbar(`${provider}のモデルリストを取得しました`, { variant: 'success' });
+      } else {
+        console.log('Empty response: Setting default model:', newModelName);
+        setAvailableModels([newModelName]);
+        enqueueSnackbar(`モデルリストが空です。デフォルトモデル ${newModelName} を使用します`, { variant: 'info' });
+      }
+    } catch (error) {
+      console.error('LLM API Error:', error);
+      logger.error('Error getting models for new provider:', error);
+      // Fall back to default model
       if (newModelName) {
+        console.log('Error fallback: Setting default model:', newModelName);
         setAvailableModels([newModelName]);
       }
     }
@@ -527,80 +523,78 @@ const LlmConfigPage: React.FC = () => {
     // Update config
     handleEmbeddingInputChange('provider', provider);
 
-    // プロバイダー変更時は常にデフォルト設定を適用
-    let needsApiBaseUpdate = true; // プロバイダー変更時は常にAPI URLを更新
-    let needsModelUpdate = true; // プロバイダー変更時は常にモデル名を更新
-    let needsDimensionUpdate = !embeddingConfig.dimension || embeddingConfig.dimension === 0;
-
+    // Always update API base and model name when provider changes
     let newApiBase = embeddingConfig.base_url;
     let newModelName = embeddingConfig.model_name;
-    let newDimension = embeddingConfig.dimension;
 
-    if (needsApiBaseUpdate) {
-      switch (provider) {
-        case 'ollama':
-          newApiBase = 'http://localhost:11434';
-          break;
-        case 'openai':
-          newApiBase = 'https://api.openai.com/v1';
-          break;
-        case 'カスタム':
-          newApiBase = 'http://localhost:11434/v1';
-          break;
-        default:
-          newApiBase = 'http://localhost:11434';
+    // Set provider-specific defaults
+    switch (provider) {
+      case 'ollama':
+        newApiBase = 'http://localhost:11434';
+        newModelName = 'nomic-embed-text:latest';
+        break;
+      case 'openai':
+        newApiBase = 'https://api.openai.com/v1';
+        newModelName = 'text-embedding-3-small';
+        break;
+      case 'カスタム':
+        newApiBase = 'http://localhost:11434/v1';
+        newModelName = 'custom-embedding-model';
+        break;
+      default:
+        newApiBase = 'http://localhost:11434';
+        newModelName = 'nomic-embed-text:latest';
+    }
+
+    // Always update API base and model name for provider change
+    handleEmbeddingInputChange('base_url', newApiBase);
+    handleEmbeddingInputChange('model_name', newModelName);
+
+    // Try to get models for the new provider
+    try {
+      const testConfig = {
+        ...embeddingConfig,
+        provider: provider,
+        base_url: newApiBase,
+      };
+      console.log('=== Embedding Provider Change Debug ===');
+      console.log('Provider:', provider);
+      console.log('newModelName:', newModelName);
+      console.log('Calling getModelsFromApi with config:', testConfig);
+      
+      const response = await embeddingConfigApi.getModelsFromApi(testConfig);
+      console.log('Raw Embedding API response:', response);
+      console.log('Response type:', typeof response);
+      console.log('Is array:', Array.isArray(response));
+      
+      // Handle different response formats
+      if (Array.isArray(response)) {
+        console.log('Using direct array response, length:', response.length);
+        setAvailableEmbeddingModels(response);
+      } else if (response.data && Array.isArray(response.data)) {
+        console.log('Using response.data array, length:', response.data.length);
+        setAvailableEmbeddingModels(response.data);
+      } else {
+        console.log('No valid model array found, using empty array');
+        setAvailableEmbeddingModels([]);
       }
-    }
-
-    if (needsModelUpdate) {
-      switch (provider) {
-        case 'ollama':
-          newModelName = 'nomic-embed-text:latest';
-          break;
-        case 'openai':
-          newModelName = 'text-embedding-3-small';
-          break;
-        case 'カスタム':
-          newModelName = 'custom-embedding-model';
-          break;
-        default:
-          newModelName = 'nomic-embed-text:latest';
+      
+      if (response && response.length > 0) {
+        console.log('Success: Setting models to response array');
+        enqueueSnackbar(`${provider}のモデルリストを取得しました`, { variant: 'success' });
+      } else {
+        console.log('Empty response: Setting default model:', newModelName);
+        setAvailableEmbeddingModels([newModelName]);
+        enqueueSnackbar(`モデルリストが空です。デフォルトモデル ${newModelName} を使用します`, { variant: 'info' });
       }
-    }
-
-    if (needsDimensionUpdate) {
-      switch (provider) {
-        case 'ollama':
-          newDimension = 768;
-          break;
-        case 'openai':
-          newDimension = 1536;
-          break;
-        case 'カスタム':
-          newDimension = 768;
-          break;
-        default:
-          newDimension = 768;
+    } catch (error) {
+      console.error('Embedding API Error:', error);
+      logger.error('Error getting models for new provider:', error);
+      // Fall back to default model
+      if (newModelName) {
+        console.log('Error fallback: Setting default model:', newModelName);
+        setAvailableEmbeddingModels([newModelName]);
       }
-    }
-
-    // Update API base, model name, and dimension according to provider change
-    if (needsApiBaseUpdate) {
-      console.log(`Updating API base for provider ${provider}: ${newApiBase}`);
-      handleEmbeddingInputChange('base_url', newApiBase);
-    }
-    if (needsModelUpdate) {
-      console.log(`Updating model name for provider ${provider}: ${newModelName}`);
-      handleEmbeddingInputChange('model_name', newModelName);
-    }
-    if (needsDimensionUpdate) {
-      console.log(`Updating dimension for provider ${provider}: ${newDimension}`);
-      handleEmbeddingInputChange('dimension', newDimension);
-    }
-
-    // すべてのプロバイダーでモデルを取得しようと試みる
-    if (newApiBase) {
-      await fetchEmbeddingModelsFromProvider(provider, newApiBase, embeddingConfig.api_key);
     }
   };
 
