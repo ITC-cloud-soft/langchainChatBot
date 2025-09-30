@@ -101,8 +101,11 @@ const AppBarContent: React.FC<AppBarContentProps> = memo(
   ({ menuItems, location, onProfileMenuOpen, onDrawerToggle, anchorEl, onProfileMenuClose }) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const isChatPage = location.pathname === '/chat';
     const currentTitle =
-      menuItems.find(item => item.path === location.pathname)?.text ?? 'チャットボットシステム';
+      location.pathname === '/chat'
+        ? ''
+        : menuItems.find(item => item.path === location.pathname)?.text ?? '';
 
     const handleLogout = async () => {
       await logout();
@@ -236,17 +239,25 @@ interface MainContentProps {
 }
 
 const MainContent: React.FC<MainContentProps> = memo(({ children }) => {
+  const location = useLocation();
+  const isChatPage = location.pathname === '/chat';
+
   return (
     <Box
       component="main"
       sx={{
         flexGrow: 1,
-        p: 3,
+        p: isChatPage ? 0 : 3,
         width: { sm: `calc(100% - ${drawerWidth}px)` },
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <Toolbar /> {/* AppBarのスペース確保 */}
-      {children}
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {children}
+      </Box>
     </Box>
   );
 });

@@ -54,39 +54,30 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const isSendDisabled = !value.trim() || isLoading || disabled;
-  // Force hot reload
 
   return (
     <Box
       sx={{
         flexShrink: 0,
         height: 'auto',
-        minHeight: '60px',
-        maxHeight: '140px',
-        borderTop: 1,
-        borderColor: 'divider',
+        minHeight: { xs: '72px', md: '80px' },
+        maxHeight: { xs: '140px', md: '160px' },
+        borderTop: '1px solid',
+        borderColor: 'rgba(0, 0, 0, 0.08)',
         backgroundColor: 'background.paper',
-        p: { xs: 1, md: 1.5 },
-        pb: { xs: 1.5, md: 2 },
+        backdropFilter: 'blur(20px)',
+        p: { xs: 2, md: 2.5 },
         display: 'flex',
-        alignItems: 'flex-end',
-        gap: 1,
+        alignItems: 'center',
+        gap: { xs: 1.5, md: 2 },
+        position: 'relative',
       }}
     >
-      <Box
-        sx={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 2,
-          maxWidth: '100%',
-        }}
-      >
         <TextField
           inputRef={inputRef}
           fullWidth
           multiline
-          maxRows={3}
+          maxRows={4}
           value={value}
           onChange={(e) => {
             if (e.target.value.length <= maxLength) {
@@ -100,31 +91,52 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           disabled={disabled}
           sx={{
             '& .MuiOutlinedInput-root': {
-              borderRadius: 3,
-              backgroundColor: 'background.default',
-              transition: 'all 0.2s ease',
+              borderRadius: 20,
+              backgroundColor: 'rgba(255, 255, 255, 0.8)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
               '& fieldset': {
-                borderColor: 'divider',
+                borderColor: 'rgba(255, 255, 255, 0.3)',
+                borderWidth: 1,
               },
-              '&:hover fieldset': {
-                borderColor: 'primary.main',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.06)',
+                '& fieldset': {
+                  borderColor: theme.palette.primary.light,
+                  borderWidth: 1,
+                },
               },
-              '&.Mui-focused fieldset': {
-                borderWidth: 2,
-                borderColor: 'primary.main',
+              '&.Mui-focused': {
+                backgroundColor: '#ffffff',
+                boxShadow: `0 0 0 3px rgba(14, 165, 233, 0.08), 0 8px 24px rgba(0, 0, 0, 0.08)`,
+                border: `1px solid ${theme.palette.primary.main}`,
+                '& fieldset': {
+                  borderWidth: 1,
+                  borderColor: theme.palette.primary.main,
+                },
               },
               '&.Mui-disabled': {
-                backgroundColor: 'action.disabledBackground',
+                backgroundColor: 'rgba(255, 255, 255, 0.5)',
+                '& fieldset': {
+                  borderColor: theme.palette.grey[300],
+                },
               },
             },
             '& .MuiOutlinedInput-input': {
               fontSize: '0.95rem',
               lineHeight: 1.5,
-              padding: '10px 14px',
+              padding: '14px 20px',
               '&::placeholder': {
-                color: 'text.secondary',
-                opacity: 0.7,
+                color: theme.palette.grey[500],
+                opacity: 0.8,
+                fontWeight: 400,
               },
+            },
+            '& .MuiOutlinedInput-multiline': {
+              padding: 0,
             },
           }}
         />
@@ -133,25 +145,26 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           onClick={handleSend}
           disabled={isSendDisabled}
           sx={{
-            width: 52,
-            height: 52,
-            borderRadius: 3,
+            width: 56,
+            height: 56,
+            borderRadius: '50%',
             backgroundColor: isSendDisabled ? 'action.disabledBackground' : 'primary.main',
             color: isSendDisabled ? 'action.disabled' : 'primary.contrastText',
             '&:hover': {
               backgroundColor: isSendDisabled ? 'action.disabledBackground' : 'primary.dark',
               transform: isSendDisabled ? 'none' : 'scale(1.05)',
+              boxShadow: isSendDisabled ? 'none' : '0 6px 20px rgba(14, 165, 233, 0.25)',
             },
             '&:active': {
               transform: isSendDisabled ? 'none' : 'scale(0.95)',
             },
-            transition: 'all 0.2s ease',
-            boxShadow: isSendDisabled ? 'none' : theme.shadows[2],
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            boxShadow: isSendDisabled ? 'none' : '0 4px 14px rgba(14, 165, 233, 0.2)',
+            flexShrink: 0,
           }}
         >
-          <SendIcon sx={{ fontSize: '1.3rem' }} />
+          <SendIcon sx={{ fontSize: '1.4rem' }} />
         </IconButton>
-      </Box>
     </Box>
   );
 };

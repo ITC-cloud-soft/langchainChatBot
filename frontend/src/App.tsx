@@ -44,10 +44,11 @@ function App() {
                         mt: 0,
                         mb: 0,
                         px: 0,
-                        height: '100vh',
-                        maxHeight: '100vh',
+                        height: '100%',
+                        maxHeight: '100%',
                         display: 'flex',
-                        flexDirection: 'column'
+                        flexDirection: 'column',
+                        overflow: 'hidden'
                       }}
                     >
                       <Routes>

@@ -131,7 +131,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         </Box>
 
         {/* アクションボタン */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mb: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: { xs: 0.5, md: 1 }, mb: { xs: 2, md: 3 } }}>
           <Button
             onClick={onSessionCreate}
             variant="contained"
@@ -226,16 +226,22 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             width: '6px',
           },
           '&::-webkit-scrollbar-track': {
-            background: 'rgba(0, 0, 0, 0.1)',
+            background: 'rgba(0, 0, 0, 0.05)',
             borderRadius: '3px',
+            margin: '4px',
           },
           '&::-webkit-scrollbar-thumb': {
-            background: 'rgba(0, 0, 0, 0.3)',
+            background: 'rgba(14, 165, 233, 0.3)',
             borderRadius: '3px',
+            transition: 'all 0.3s ease',
             '&:hover': {
-              background: 'rgba(0, 0, 0, 0.5)',
+              background: 'rgba(14, 165, 233, 0.6)',
             },
           },
+          '&::-webkit-scrollbar-corner': {
+            background: 'transparent',
+          },
+          scrollBehavior: 'smooth',
         }}
       >
         {isLoading ? (
