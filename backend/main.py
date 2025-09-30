@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import routers
-from api.routes import chat, llm_config, knowledge, config, embedding_config
+from api.routes import chat, llm_config, knowledge, config, embedding_config, auth, users
 from api.core.config_manager import settings
 from api.core.config_watcher import config_updater
 from api.core.database import initialize_database_on_startup, cleanup_database_on_shutdown, database_manager, check_database_health
@@ -27,7 +27,8 @@ from api.services.base_service import ServiceRegistry
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    # Startup
+    import logging
+    logger = logging.getLogger("chatbot_app")
     
     # Reload settings to ensure environment variables are loaded
     settings.reload()
@@ -37,11 +38,44 @@ async def lifespan(app: FastAPI):
     try:
         db_initialized = await initialize_database_on_startup()
         if db_initialized:
-            pass
+            logger.info("Database initialized successfully")
+            
+            # Auto-create admin user if not exists
+            try:
+                from api.core.database import get_db_session
+                from api.models.user import User, UserRole, get_user_by_username, create_user
+                from api.core.auth import PasswordManager
+                import os
+                
+                async for db in get_db_session():
+                    # Check if admin user exists
+                    admin_user = await get_user_by_username(db, "admin")
+                    if not admin_user:
+                        logger.info("Admin user not found, creating default admin...")
+                        admin_password = os.getenv("SUPER_ADMIN_PASSWORD", "admin123")
+                        hashed_password = PasswordManager.hash_password(admin_password)
+                        
+                        await create_user(
+                            db=db,
+                            username="admin",
+                            email="admin@example.com",
+                            hashed_password=hashed_password,
+                            full_name="System Administrator",
+                            role=UserRole.ADMIN
+                        )
+                        logger.info("✓ Default admin user created successfully")
+                        logger.info(f"  Username: admin")
+                        logger.info(f"  Password: {admin_password}")
+                        logger.warning("⚠️  IMPORTANT: Change this password after first login!")
+                    else:
+                        logger.info("Admin user already exists")
+                    break
+            except Exception as e:
+                logger.warning(f"Could not auto-create admin user: {e}")
         else:
-            pass
+            logger.warning("Database initialization failed")
     except Exception as e:
-        pass
+        logger.error(f"Database initialization error: {e}")
     
     # Register and initialize services
     ServiceRegistry.register("chat_service", chat_service)
@@ -49,7 +83,10 @@ async def lifespan(app: FastAPI):
     
     # Log initialization results
     for service_name, success in initialization_results.items():
-        pass
+        if success:
+            logger.info(f"Service '{service_name}' initialized successfully")
+        else:
+            logger.warning(f"Service '{service_name}' initialization failed")
     
     yield
     # Shutdown
@@ -57,7 +94,7 @@ async def lifespan(app: FastAPI):
     try:
         await cleanup_database_on_shutdown()
     except Exception as e:
-        pass
+        logger.error(f"Error during database cleanup: {e}")
     # Stop config watcher
     config_updater.stop()
 
@@ -79,6 +116,14 @@ app.add_middleware(
 )
 
 # Include routers
+
+# Authentication routes (public)
+app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
+
+# User management routes (require authentication, admin for write)
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+
+# Existing routes (will be updated for tenant context)
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(llm_config.router, prefix="/api/llm", tags=["llm-config"])
 app.include_router(embedding_config.router, prefix="/api/embedding", tags=["embedding-config"])

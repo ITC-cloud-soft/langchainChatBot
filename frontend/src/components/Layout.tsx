@@ -12,6 +12,9 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Divider,
+  ListItemButton,
+  Chip,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -19,8 +22,11 @@ import {
   Settings as SettingsIcon,
   LibraryBooks as KnowledgeIcon,
   AccountCircle,
+  Logout as LogoutIcon,
+  People as PeopleIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const drawerWidth = 240;
 
@@ -93,8 +99,16 @@ interface AppBarContentProps {
 
 const AppBarContent: React.FC<AppBarContentProps> = memo(
   ({ menuItems, location, onProfileMenuOpen, onDrawerToggle, anchorEl, onProfileMenuClose }) => {
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
     const currentTitle =
       menuItems.find(item => item.path === location.pathname)?.text ?? 'チャットボットシステム';
+
+    const handleLogout = async () => {
+      await logout();
+      navigate('/login');
+      onProfileMenuClose();
+    };
 
     return (
       <AppBar
@@ -117,6 +131,17 @@ const AppBarContent: React.FC<AppBarContentProps> = memo(
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {currentTitle}
           </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
+            <Chip
+              label={user?.role === 'admin' ? '管理者' : 'ユーザー'}
+              size="small"
+              color={user?.role === 'admin' ? 'secondary' : 'default'}
+              sx={{ color: 'white', borderColor: 'white' }}
+            />
+            <Typography variant="body2" sx={{ display: { xs: 'none', md: 'block' } }}>
+              {user?.username}
+            </Typography>
+          </Box>
           <IconButton
             size="large"
             aria-label="account of current user"
@@ -142,9 +167,18 @@ const AppBarContent: React.FC<AppBarContentProps> = memo(
             open={Boolean(anchorEl)}
             onClose={onProfileMenuClose}
           >
-            <MenuItem onClick={onProfileMenuClose}>プロフィール</MenuItem>
-            <MenuItem onClick={onProfileMenuClose}>設定</MenuItem>
-            <MenuItem onClick={onProfileMenuClose}>ログアウト</MenuItem>
+            <MenuItem disabled>
+              <Typography variant="body2" color="text.secondary">
+                {user?.email}
+              </Typography>
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={handleLogout}>
+              <ListItemIcon>
+                <LogoutIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>ログアウト</ListItemText>
+            </MenuItem>
           </Menu>
         </Toolbar>
       </AppBar>
@@ -211,6 +245,7 @@ const MainContent: React.FC<MainContentProps> = memo(({ children }) => {
         width: { sm: `calc(100% - ${drawerWidth}px)` },
       }}
     >
+      <Toolbar /> {/* AppBarのスペース確保 */}
       {children}
     </Box>
   );
@@ -243,14 +278,27 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     [navigate],
   );
 
+  const { isAdmin } = useAuth();
+
   const menuItems: MenuItemType[] = [
     { text: 'チャットボット', icon: <ChatIcon />, path: '/chat' },
-    { text: 'LLM設定', icon: <SettingsIcon />, path: '/llm-config' },
-    { text: 'ナレッジ設定', icon: <KnowledgeIcon />, path: '/knowledge' },
+    ...(isAdmin ? [
+      { text: 'LLM設定', icon: <SettingsIcon />, path: '/llm-config' },
+      { text: 'ナレッジ設定', icon: <KnowledgeIcon />, path: '/knowledge' },
+      { text: 'ユーザー管理', icon: <PeopleIcon />, path: '/users' }
+    ] : []),
   ];
 
   return (
     <Box sx={{ display: 'flex', height: '90vh' }}>
+      <AppBarContent
+        menuItems={menuItems}
+        location={location}
+        onProfileMenuOpen={handleProfileMenuOpen}
+        onDrawerToggle={handleDrawerToggle}
+        anchorEl={anchorEl}
+        onProfileMenuClose={handleProfileMenuClose}
+      />
       <NavigationDrawer
         mobileOpen={mobileOpen}
         onDrawerToggle={handleDrawerToggle}

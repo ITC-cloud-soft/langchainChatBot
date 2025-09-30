@@ -7,17 +7,16 @@ This module provides API endpoints for managing LLM configurations.
 import os
 import json
 import httpx
-from typing import Dict, Any, List
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from typing import Dict, Any, List, Annotated, Optional
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from pydantic import BaseModel
 
 from api.core.config_manager import settings, config_manager
 from api.core.utils import handle_exceptions, default_logger, format_success_response
+from api.middleware import CurrentUser, get_current_admin_user, get_current_active_user, get_optional_user
 
 # Create router
 router = APIRouter()
-
-# Pydantic models
 class LLMConfig(BaseModel):
     """LLM configuration model"""
     provider: str = "openai"
@@ -157,8 +156,10 @@ async def get_models_from_api(api_base: str, api_key: str = "") -> List[str]:
 
 
 @router.get("/config", response_model=LLMConfigResponse)
-async def get_llm_config():
-    """Get current LLM configuration"""
+async def get_llm_config(
+    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_user)] = None
+):
+    """Get current LLM configuration (Optional authentication)"""
     # Get current configuration from config manager
     llm_config = {
         "provider": config_manager.get_value("llm", "provider") or "openai",
@@ -182,8 +183,11 @@ async def get_llm_config():
     )
 
 @router.post("/config", response_model=ConfigStatus)
-async def update_llm_config(config: LLMConfig):
-    """Update LLM configuration"""
+async def update_llm_config(
+    config: LLMConfig,
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)]
+):
+    """Update LLM configuration (Admin only)"""
     # Update configuration using config manager
     result = config_manager.set_value("llm", "provider", config.provider)
     if not result.success:
@@ -226,8 +230,11 @@ async def update_llm_config(config: LLMConfig):
     )
 
 @router.post("/config/test", response_model=ConfigStatus)
-async def test_llm_config(config: LLMConfig):
-    """Test LLM configuration"""
+async def test_llm_config(
+    config: LLMConfig,
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)]
+):
+    """Test LLM configuration (Admin only)"""
     try:
         # Import here to avoid circular imports
         from langchain_openai import ChatOpenAI
@@ -264,8 +271,10 @@ async def test_llm_config(config: LLMConfig):
         )
 
 @router.get("/models", response_model=List[str])
-async def get_available_models():
-    """Get list of available models"""
+async def get_available_models(
+    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_user)] = None
+):
+    """Get list of available models (Authenticated users)"""
     try:
         # Get current configuration
         api_base = config_manager.get_value("llm", "api_base") or settings.OPENAI_API_BASE
@@ -279,8 +288,11 @@ async def get_available_models():
 
 
 @router.post("/models/from-api", response_model=List[str])
-async def get_models_from_api_endpoint(config: LLMConfig):
-    """Get models from a specific API configuration"""
+async def get_models_from_api_endpoint(
+    config: LLMConfig,
+    current_user: Annotated[CurrentUser, Depends(get_current_active_user)]
+):
+    """Get models from a specific API configuration (Authenticated users)"""
     try:
         models = await get_models_from_api(config.api_base, config.api_key)
         return models
@@ -288,8 +300,10 @@ async def get_models_from_api_endpoint(config: LLMConfig):
         raise HTTPException(status_code=500, detail=f"Error getting models from API: {str(e)}")
 
 @router.get("/config/default", response_model=LLMConfig)
-async def get_default_config():
-    """Get default LLM configuration"""
+async def get_default_config(
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)]
+):
+    """Get default LLM configuration (Admin only)"""
     return LLMConfig(
         provider=config_manager.get_value("llm", "provider") or "openai",
         api_base=config_manager.get_value("llm", "api_base") or settings.OPENAI_API_BASE,
@@ -303,8 +317,10 @@ async def get_default_config():
     )
 
 @router.post("/config/reset", response_model=ConfigStatus)
-async def reset_llm_config():
-    """Reset LLM configuration to defaults"""
+async def reset_llm_config(
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)]
+):
+    """Reset LLM configuration to defaults (Admin only)"""
     # Reset to default configuration
     success = config_manager.reset_to_defaults()
     
@@ -326,8 +342,11 @@ async def reset_llm_config():
         )
 
 @router.post("/config/import", response_model=ConfigStatus)
-async def import_llm_config(file: UploadFile = File(...)):
-    """Import LLM configuration from a file"""
+async def import_llm_config(
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)],
+    file: UploadFile = File(...)
+):
+    """Import LLM configuration from a file (Admin only)"""
     try:
         # Read file content
         content = await file.read()
@@ -356,8 +375,10 @@ async def import_llm_config(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Error importing LLM config: {str(e)}")
 
 @router.get("/config/export")
-async def export_llm_config():
-    """Export current LLM configuration"""
+async def export_llm_config(
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)]
+):
+    """Export current LLM configuration (Admin only)"""
     llm_section = config_manager.get_section("llm")
     if llm_section:
         return format_success_response(
@@ -368,8 +389,10 @@ async def export_llm_config():
         raise HTTPException(status_code=500, detail="Failed to export LLM configuration")
 
 @router.post("/reinitialize", response_model=ConfigStatus)
-async def reinitialize_chat_service():
-    """Force reinitialize chat service with current LLM configuration"""
+async def reinitialize_chat_service(
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)]
+):
+    """Force reinitialize chat service with current LLM configuration (Admin only)"""
     try:
         from api.services.chat_service import chat_service
         success = await chat_service.reinitialize_llm()

@@ -107,13 +107,13 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
           flexDirection: 'column',
         }}
       >
-        <Box sx={{ flex: 1, width: '100%', overflow: 'hidden' }}>
-          <VirtualizedMessageList
-            messages={messages}
-            itemSize={estimatedItemSize}
-            height="100%"
-            width="100%"
-          />
+        <Box sx={{ flex: 1, width: '100%', overflow: 'hidden', position: 'relative' }}>
+          <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+            <VirtualizedMessageList
+              messages={messages}
+              itemSize={estimatedItemSize}
+            />
+          </Box>
         </Box>
       </Box>
     );

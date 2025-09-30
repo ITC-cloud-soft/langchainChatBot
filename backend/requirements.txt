@@ -23,12 +23,22 @@ langchain-qdrant==0.2.0
 # Qdrant
 qdrant-client==1.10.1
 
-# Authentication
+# Database (MySQL)
+sqlalchemy==2.0.23
+aiomysql==0.2.0
+alembic==1.13.1
+asyncmy==0.2.9
+
+# Authentication & Security
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
 
 # File handling
 aiofiles==24.1.0
+
+# Utilities
+tenacity==8.2.3
 
 # Testing
 pytest==7.4.3

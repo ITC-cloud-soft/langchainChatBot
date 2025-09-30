@@ -17,7 +17,8 @@ const api = axios.create({
 api.interceptors.request.use(
   config => {
     // Add auth token if available
-    const token = localStorage.getItem('auth_token');
+    // Try both 'access_token' (used by authService) and 'auth_token' (legacy)
+    const token = localStorage.getItem('access_token') || localStorage.getItem('auth_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -43,8 +44,10 @@ api.interceptors.response.use(
 
       // Handle specific error status codes
       if (status === 401) {
-        // Unauthorized - clear token and redirect to login
-        localStorage.removeItem('auth_token');
+        // Unauthorized - clear tokens and redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('auth_token'); // legacy
         window.location.href = '/login';
       } else if (status === 403) {
         // Forbidden - insufficient permissions
@@ -466,6 +469,11 @@ export const embeddingConfigApi = {
     api_key?: string;
   }) => {
     const response = await api.post('/api/embedding/models/for-provider', providerConfig);
+    return response.data;
+  },
+
+  getModelsFromApi: async (config: Record<string, unknown>) => {
+    const response = await api.post('/api/embedding/models/from-api', config);
     return response.data;
   },
 

@@ -18,20 +18,22 @@ Base = declarative_base()
 
 class ChatSession(Base):
     """
-    Chat session model representing a conversation session
+    Chat session model representing a conversation session (single organization)
     """
     __tablename__ = "chat_sessions"
     
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id_int = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     session_id = Column(String(255), unique=True, index=True, nullable=False)
     title = Column(String(500), nullable=True)
-    user_id = Column(String(255), nullable=True, index=True)
+    user_id = Column(String(255), nullable=True, index=True)  # Legacy field, kept for compatibility
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     session_metadata = Column("metadata", JSON, nullable=True)
     
-    # Relationship with messages
+    # Relationships
+    user = relationship("User", back_populates="chat_sessions", foreign_keys=[user_id_int])
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
     
     def __repr__(self):
@@ -41,6 +43,7 @@ class ChatSession(Base):
         """Convert to dictionary"""
         return {
             "id": self.id,
+            "user_id_int": self.user_id_int,
             "session_id": self.session_id,
             "title": self.title,
             "user_id": self.user_id,
@@ -53,7 +56,7 @@ class ChatSession(Base):
 
 class ChatMessage(Base):
     """
-    Chat message model representing individual messages in a conversation
+    Chat message model representing individual messages in a conversation (single organization)
     """
     __tablename__ = "chat_messages"
     

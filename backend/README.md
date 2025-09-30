@@ -1,267 +1,303 @@
-# チャットボットバックエンド
+# バックエンド - FastAPI + LangChain
 
-FastAPIとLangChainを使用したチャットボットバックエンドです。MySQLとQdrantをサポートし、LLM統合、ナレッジベース管理、リアルタイムチャット機能を提供します。
+チャットボットのバックエンドAPIサーバーです。LangChainによるLLM統合、Qdrantによるベクトル検索、MySQLによるデータ管理を提供します。
 
-## 機能
+## 🚀 クイックスタート
 
-- FastAPIバックエンド（非同期サポート）
-- LangChainによるAI/MLオーケストレーション（OpenAI互換LLMとOllamaエンベディング）
-- Qdrantベクトルデータベース
-- MySQLリレーショナルデータベース
-- TOMLベースの設定管理（ホットリロード対応）
-- JWT認証
-- WebSocketによるリアルタイムチャット
-- RESTful APIエンドポイント
-- テストとコード品質ツール（pytest, black, mypyなど）
-
-## インストール
-
-### uv使用（推奨）
+### インストール
 
 ```bash
-# 依存関係インストール
+# 依存関係インストール（uv推奨）
 uv sync
 
-# バージョン指定が必要な場合
-SETUPTOOLS_SCM_PRETEND_VERSION_FOR_CHATBOT_BACKEND=1.0.0 uv sync
+# または pip
+pip install -r requirements.txt
 ```
 
-### pip使用
+### 設定
 
 ```bash
-pip install -e ".[dev]"
+# 設定ファイルコピー
+cp config.toml.example config.toml
+
+# 環境変数設定
+cp .env.example .env
 ```
 
-## 開発
+`config.toml`を編集：
+
+```toml
+[llm]
+provider = "カスタム"
+api_base = "https://api.deepseek.com/v1"
+api_key = "your-api-key"
+model_name = "deepseek-chat"
+```
+
+`.env`を編集：
+
+```bash
+JWT_SECRET_KEY=your-super-secret-key-change-in-production
+DB_PASSWORD=root
+```
 
 ### サーバー起動
 
 ```bash
 # 開発モード（自動リロード）
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 # 本番モード
-uvicorn main:app --host 0.0.0.0 --port 8000
+uv run uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### コード品質とテスト
+**初回起動時に自動実行:**
+- データベーステーブル作成
+- 管理者ユーザー作成（admin / admin123）
+
+## 📁 ディレクトリ構成
+
+```
+backend/
+├── api/
+│   ├── core/              # コアモジュール
+│   │   ├── auth.py       # JWT認証
+│   │   ├── config_manager.py  # TOML設定管理
+│   │   ├── database.py   # データベース接続
+│   │   └── qdrant_manager.py  # ベクトルDB管理
+│   ├── routes/            # APIエンドポイント
+│   │   ├── auth.py       # 認証API
+│   │   ├── users.py      # ユーザー管理API
+│   │   ├── chat.py       # チャットAPI
+│   │   ├── llm_config.py # LLM設定API
+│   │   └── knowledge.py  # ナレッジAPI
+│   ├── services/          # ビジネスロジック
+│   │   ├── chat_service.py
+│   │   └── chat_history_service.py
+│   ├── models/            # データモデル
+│   │   ├── user.py       # ユーザーモデル
+│   │   └── database.py   # チャット履歴モデル
+│   └── middleware/        # ミドルウェア
+│       └── auth_middleware.py
+├── scripts/               # ユーティリティ
+│   └── quick_setup.py    # セットアップスクリプト
+├── config.toml           # 設定ファイル
+├── main.py              # エントリーポイント
+└── requirements.txt     # 依存関係
+```
+
+## 🔧 主要機能
+
+### 認証・認可
+
+- JWT トークンベース認証
+- Access Token（30分） + Refresh Token（7日）
+- ロールベースアクセス制御（admin/user）
+- パスワードハッシュ化（bcrypt）
+
+### チャット機能
+
+- リアルタイムストリーミング応答
+- セッション管理
+- 履歴保存（MySQL）
+- RAG（検索拡張生成）
+
+### ナレッジベース
+
+- ドキュメントアップロード（PDF、TXT、DOCX、MD）
+- ベクトル検索（Qdrant）
+- Embedding生成（Ollama）
+
+### 設定管理
+
+- TOML形式の設定ファイル
+- ホットリロード対応
+- 環境変数オーバーライド
+
+## 📡 APIエンドポイント
+
+### 認証（/api/auth）
+
+| メソッド | エンドポイント | 説明 |
+|---------|--------------|------|
+| POST | `/login` | ログイン |
+| POST | `/logout` | ログアウト |
+| POST | `/refresh` | トークンリフレッシュ |
+| GET | `/me` | ユーザー情報取得 |
+| POST | `/change-password` | パスワード変更 |
+
+### ユーザー管理（/api/users）- 管理者のみ
+
+| メソッド | エンドポイント | 説明 |
+|---------|--------------|------|
+| POST | `/` | ユーザー作成 |
+| GET | `/` | ユーザー一覧 |
+| GET | `/{id}` | ユーザー詳細 |
+| PUT | `/{id}` | ユーザー更新 |
+| DELETE | `/{id}` | ユーザー削除 |
+
+### チャット（/api/chat）
+
+| メソッド | エンドポイント | 説明 |
+|---------|--------------|------|
+| POST | `/send` | メッセージ送信 |
+| POST | `/stream` | ストリーミング応答 |
+| GET | `/sessions` | セッション一覧 |
+| GET | `/sessions/{id}/history` | 履歴取得 |
+| DELETE | `/sessions/{id}` | セッション削除 |
+
+### LLM設定（/api/llm）- 管理者のみ
+
+| メソッド | エンドポイント | 説明 |
+|---------|--------------|------|
+| GET | `/config` | 設定取得 |
+| POST | `/config` | 設定更新 |
+| POST | `/config/test` | 接続テスト |
+| GET | `/models` | モデル一覧 |
+
+### ナレッジベース（/api/knowledge）- 管理者のみ
+
+| メソッド | エンドポイント | 説明 |
+|---------|--------------|------|
+| POST | `/documents/upload` | アップロード |
+| GET | `/documents` | ドキュメント一覧 |
+| DELETE | `/documents/{id}` | 削除 |
+| POST | `/search` | 検索 |
+
+## 🧪 開発
+
+### テスト
 
 ```bash
-# テスト実行
-pytest --cov=api --cov-report=term-missing
-pytest -m unit  # ユニットテスト
-pytest -m integration  # インテグレーションテスト
+# 全テスト実行
+pytest
 
+# カバレッジ付き
+pytest --cov=api
+
+# 特定のマーカーのみ
+pytest -m unit
+```
+
+### コード品質
+
+```bash
 # フォーマット
 black .
-isort .
+ruff check .
 
-# リンター
-flake8 .
+# 型チェック
 mypy api/
-
-# セキュリティスキャン
-bandit -r .
 ```
 
-## 設定
+## 🗄️ データベース
 
-アプリケーションはTOML設定ファイルを使用します。`config.toml.example` を `config.toml` にコピーして編集：
+### 必要なサービス
 
 ```bash
-cp config.toml.example config.toml
+# Docker Composeで起動
+docker-compose up -d
+
+# MySQL（ポート3306）
+# Qdrant（ポート6333）
 ```
 
-環境変数テンプレートもコピー：
+### テーブル構成
+
+- **users** - ユーザー情報
+- **chat_sessions** - セッション
+- **chat_messages** - メッセージ履歴
+- **chat_metadata** - メタデータ
+- **chat_history_stats** - 統計
+
+### マイグレーション
 
 ```bash
-cp .env.example .env
+# 手動セットアップ（開発時）
+python scripts/quick_setup.py
+
+# 本番環境（Alembic使用推奨）
+alembic upgrade head
 ```
 
-### 設定セクション
+## 🔐 セキュリティ
 
-- `[app]`: アプリケーション設定（debugなど）
-- `[backend]`: サーバー設定（host, port, reload）
-- `[qdrant]`: ベクトルDB設定（host, port）
-- `[mysql]`: MySQL設定（host, port, database, user, password）
-- `[ollama]`: Ollamaエンベディングモデル設定（base_url, embedding_model）
-- `[llm]`: LLM設定（base_url, api_key, model_name）
-- `[embedding]`: エンベディング設定
-- `[upload]`: ファイルアップロード設定
-- `[security]`: セキュリティ設定（secret_key）
+### 設定のベストプラクティス
 
-### 重要な設定ファイル
+1. **JWT Secret Key**
+   ```bash
+   # 強力なキーを生成
+   openssl rand -hex 32
+   ```
 
-- `config.toml`: メイン設定ファイル（機密情報含む、git未コミット）
-- `.env`: 環境変数（機密情報含む、git未コミット）
-- `config.toml.example`: 設定テンプレート
-- `.env.example`: 環境変数テンプレート
+2. **環境変数で上書き**
+   ```bash
+   export JWT_SECRET_KEY="your-secret-key"
+   export DB_PASSWORD="secure-password"
+   ```
 
-### 必須設定
+3. **本番環境**
+   - HTTPS必須
+   - CORS設定を厳密に
+   - レート制限の実装
+   - ログ監視
 
-アプリケーション起動前に設定：
+## 📚 依存関係
 
-1. **LLM設定** (`config.toml`):
-   - `llm.api_key`: LLMサービスAPIキー
-   - `llm.base_url`: LLMサービスベースURL
-   - `llm.model_name`: 使用モデル名
+### 主要パッケージ
 
-2. **データベース設定** (`config.toml`):
-   - `mysql.password`: MySQLパスワード
-   - `security.secret_key`: JWTシークレットキー
+- **fastapi** - Webフレームワーク
+- **uvicorn** - ASGIサーバー
+- **sqlalchemy** - ORM
+- **langchain** - LLMオーケストレーション
+- **qdrant-client** - ベクトルDB
+- **python-jose** - JWT
+- **passlib** - パスワードハッシュ
 
-3. **環境変数** (`.env`):
-   - `SECRET_KEY`: JWTシークレットキー（config.tomlでも設定可能）
-   - `CONFIG_PATH`: 設定ファイルパス（オプション、デフォルト: config.toml）
-   - `LOG_LEVEL`: ログレベル（オプション、デフォルト: INFO）
+### インストール方法
 
-### 設定例
-
-```toml
-[app]
-debug = true
-
-[backend]
-host = "0.0.0.0"
-port = 8000
-reload = true
-
-[qdrant]
-host = "localhost"
-port = 6333
-
-[mysql]
-host = "localhost"
-port = 3306
-database = "chatbot"
-user = "chatbot"
-password = "chatbotpassword"
-
-[ollama]
-base_url = "http://localhost:11434"
-embedding_model = "nomic-embed-text:latest"
-
-[llm]
-base_url = "http://localhost:11434/v1"
-api_key = "nokey"
-model_name = "llama3"
-
-[embedding]
-# embedding settings
-
-[upload]
-# upload params
-
-[security]
-secret_key = "your-secret-key"
-```
-
-## アーキテクチャ
-
-### バックエンド構造
-
-```
-backend/api/
-├── core/               # コアモジュール
-│   ├── config_manager.py    # TOML設定 with hot-reload
-│   ├── qdrant_manager.py   # ベクトルDB操作
-│   ├── config_watcher.py   # ファイル監視 for 設定変更
-│   ├── database.py         # MySQLデータベース
-│   └── utils.py            # 共通ユーティリティ
-├── routes/             # APIエンドポイント
-│   ├── chat.py            # チャット機能
-│   ├── llm_config.py      # LLM設定
-│   ├── knowledge.py       # ナレッジベース管理
-│   ├── config.py          # 設定管理
-│   └── digitalhuman.py    # デジタルヒューマン
-├── services/           # ビジネスロジック
-│   ├── chat_service.py    # チャット処理
-│   ├── base_service.py    # サービスベースクラス
-│   └── chat_history_service.py  # チャット履歴管理
-└── models/             # データモデル
-    └── database.py       # DBモデル
-```
-
-## APIドキュメント
-
-サーバー起動後、アクセス：
-
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-- OpenAPIスキーマ: http://localhost:8000/openapi.json
-
-### 主要エンドポイント
-
-- `GET /health` - ヘルスチェック
-- `POST /api/chat/send` - チャットメッセージ送信
-- `POST /api/chat/stream` - ストリーミング応答
-- `GET /api/chat/sessions/{session_id}/history` - チャット履歴取得
-- `DELETE /api/chat/sessions/{session_id}` - セッション削除
-- `GET /api/llm/config` - LLM設定取得
-- `POST /api/llm/config` - LLM設定更新
-- `POST /api/llm/config/test` - LLM設定テスト
-- `GET /api/llm/models` - 利用可能モデル取得
-- `POST /api/llm/config/reset` - 設定リセット
-- `POST /api/knowledge/document` - ドキュメント追加
-- `POST /api/knowledge/documents/upload` - ファイルアップロード
-- `POST /api/knowledge/directory` - ディレクトリ追加
-- `POST /api/knowledge/search` - ナレッジ検索
-- `GET /api/knowledge/collection` - コレクション情報
-- `GET /api/knowledge/documents` - ドキュメント一覧
-- `DELETE /api/knowledge/documents/{doc_id}` - ドキュメント削除
-- `DELETE /api/knowledge/collection` - コレクションクリア
-- `GET /api/config` - 現在設定取得
-- `POST /api/config/update` - 設定更新
-
-## テスト戦略
-
-- **フレームワーク**: pytest with async support
-- **カバレッジ**: pytest-cov with HTML reports
-- **マーカー**: unit, integration, api, slow
-- **要件**: 設定可能なカバレッジ閾値
-- **非同期モード**: auto for async/await support
-
-実行:
 ```bash
-make test  # Makefile使用推奨
-# または
-pytest --cov=api --cov-report=term-missing
+# uv（推奨）
+uv sync
+
+# pip
+pip install -r requirements.txt
 ```
 
-## Dockerデプロイ
+## 🐛 トラブルシューティング
 
-- **開発**: docker-compose.dev.yml
-- **本番**: docker-compose.prod.yml
-- **ステージング**: docker-compose.staging.yml
+### データベース接続エラー
 
-サービス:
-- **backend**: FastAPI (port 8000)
-
-ボリューム:
-- `./uploads`: ファイルアップロードディレクトリ
-
-ログ確認:
 ```bash
-docker-compose logs -f backend
+# MySQLが起動しているか確認
+docker-compose ps
+
+# 接続情報確認
+mysql -h localhost -u root -p
 ```
 
-## セキュリティ考慮事項
+### LLM接続エラー
 
-- JWTベース認証
-- CORS設定
-- 入力検証とサニタイズ
-- ファイルアップロードセキュリティ
-- 環境変数管理
-- Banditによるセキュリティスキャン
+```bash
+# config.tomlのapi_keyを確認
+# ログでエラー詳細を確認
+tail -f logs/app.log
+```
 
-## パフォーマンス最適化
+### Qdrant接続エラー
 
-- Async/await for I/O operations
-- 接続プーリング
-- 効率的なデータベースクエリ
-- ストリーミング応答
-- バックグラウンドタスク処理
+```bash
+# Qdrantダッシュボードで確認
+open http://localhost:6333/dashboard
+```
 
-## ライセンス
+## 📄 API ドキュメント
 
-MIT License
+サーバー起動後、以下にアクセス：
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+---
+
+**メインドキュメント**: [../README.md](../README.md)
