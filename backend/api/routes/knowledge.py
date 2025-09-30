@@ -7,14 +7,15 @@ This module provides API endpoints for managing knowledge base.
 import os
 import shutil
 import tempfile
-from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from typing import List, Dict, Any, Optional, Annotated
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from pydantic import BaseModel
 
 from api.core.qdrant_manager import qdrant_manager
 from api.core.config_manager import settings
 from api.core.config_manager import config_manager
 from api.core.utils import handle_exceptions, default_logger, format_success_response
+from api.middleware import CurrentUser, get_current_admin_user
 
 # Create router
 router = APIRouter()
@@ -56,8 +57,11 @@ class DocumentList(BaseModel):
     count: int
 
 @router.post("/document", response_model=KnowledgeResponse)
-async def add_document(document: KnowledgeDocument):
-    """Add a single document to the knowledge base"""
+async def add_document(
+    document: KnowledgeDocument,
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)]
+):
+    """Add a single document to the knowledge base (Admin only)"""
     try:
         # Initialize Qdrant manager if not already initialized
         if not qdrant_manager._initialized:
@@ -94,10 +98,11 @@ async def add_document(document: KnowledgeDocument):
 
 @router.post("/documents/upload", response_model=KnowledgeResponse)
 async def upload_document(
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)],
     file: UploadFile = File(...),
     metadata: Optional[str] = Form(None)
 ):
-    """Upload a document file to the knowledge base"""
+    """Upload a document file to the knowledge base (Admin only)"""
     try:
         # Initialize Qdrant manager if not already initialized
         if not qdrant_manager._initialized:
@@ -149,12 +154,13 @@ async def upload_document(
 
 @router.post("/directory", response_model=KnowledgeResponse)
 async def add_documents_from_directory(
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)],
     directory_path: str,
     glob_pattern: str = "**/*.txt",
     chunk_size: int = 1000,
     chunk_overlap: int = 200
 ):
-    """Add documents from a directory to the knowledge base"""
+    """Add documents from a directory to the knowledge base (Admin only)"""
     try:
         # Initialize Qdrant manager if not already initialized
         if not qdrant_manager._initialized:
@@ -267,8 +273,11 @@ async def list_documents(limit: int = 100):
         )
 
 @router.delete("/documents/{doc_id}", response_model=KnowledgeResponse)
-async def delete_document(doc_id: str):
-    """Delete a document from the knowledge base"""
+async def delete_document(
+    doc_id: str,
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)]
+):
+    """Delete a document from the knowledge base (Admin only)"""
     try:
         # Initialize Qdrant manager if not already initialized
         if not qdrant_manager._initialized:
@@ -299,8 +308,10 @@ async def delete_document(doc_id: str):
         )
 
 @router.delete("/collection", response_model=KnowledgeResponse)
-async def clear_collection():
-    """Clear all documents from the knowledge collection"""
+async def clear_collection(
+    current_user: Annotated[CurrentUser, Depends(get_current_admin_user)]
+):
+    """Clear all documents from the knowledge collection (Admin only)"""
     try:
         # Initialize Qdrant manager if not already initialized
         if not qdrant_manager._initialized:

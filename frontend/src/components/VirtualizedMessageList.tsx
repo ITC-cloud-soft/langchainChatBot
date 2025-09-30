@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useRef, useEffect, useState } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import { Box, SxProps } from '@mui/material';
 import OptimizedChatMessage from './OptimizedChatMessage';
@@ -14,8 +14,8 @@ interface VirtualizedMessageListProps {
     }>;
   }>;
   itemSize: number;
-  height: number;
-  width: number | string;
+  height?: number;
+  width?: number | string;
   sx?: SxProps;
 }
 
@@ -51,6 +51,27 @@ const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
   width,
   sx,
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  useEffect(() => {
+    if (!height || !width) {
+      const updateDimensions = () => {
+        if (containerRef.current) {
+          const rect = containerRef.current.getBoundingClientRect();
+          setDimensions({
+            width: rect.width || 800,
+            height: rect.height || 600,
+          });
+        }
+      };
+
+      updateDimensions();
+      window.addEventListener('resize', updateDimensions);
+      return () => window.removeEventListener('resize', updateDimensions);
+    }
+  }, [height, width]);
+
   const itemData = React.useMemo(() => ({ messages }), [messages]);
 
   const getItemKey = useCallback(
@@ -61,12 +82,16 @@ const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
     [messages],
   );
 
+  const actualHeight = height || dimensions.height;
+  const actualWidth = width || dimensions.width;
+
   if (messages.length === 0) {
     return (
       <Box
+        ref={containerRef}
         sx={{
-          height,
-          width,
+          height: '100%',
+          width: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -79,10 +104,10 @@ const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
   }
 
   return (
-    <Box sx={sx}>
+    <Box ref={containerRef} sx={{ height: '100%', width: '100%', ...sx }}>
       <List
-        height={height}
-        width={width}
+        height={actualHeight}
+        width={actualWidth}
         itemSize={itemSize}
         itemCount={messages.length}
         itemData={itemData}
