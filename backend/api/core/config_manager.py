@@ -88,6 +88,12 @@ class ConfigManager:
         try:
             # 環境変数マッピング
             env_mappings = {
+                'MYSQL_HOST': ('database', 'host'),
+                'MYSQL_PORT': ('database', 'port'),
+                'MYSQL_USER': ('database', 'username'),
+                'MYSQL_PASSWORD': ('database', 'password'),
+                'MYSQL_DATABASE': ('database', 'database'),
+                'MYSQL_SSL': ('database', 'ssl'),
                 'QDRANT_HOST': ('qdrant', 'host'),
                 'QDRANT_PORT': ('qdrant', 'port'),
                 'QDRANT_GRPC_PORT': ('qdrant', 'grpc_port'),
