@@ -60,16 +60,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       sx={{
         flexShrink: 0,
         height: 'auto',
-        minHeight: { xs: '72px', md: '80px' },
-        maxHeight: { xs: '140px', md: '160px' },
+        minHeight: { xs: '56px', md: '56px' },
+        maxHeight: { xs: '110px', md: '120px' },
         borderTop: '1px solid',
         borderColor: 'rgba(0, 0, 0, 0.08)',
         backgroundColor: 'background.paper',
         backdropFilter: 'blur(20px)',
-        p: { xs: 2, md: 2.5 },
+        p: { xs: 1.5, md: 1.5 },
         display: 'flex',
         alignItems: 'center',
-        gap: { xs: 1.5, md: 2 },
+        gap: { xs: 1.5, md: 1.5 },
         position: 'relative',
       }}
     >
@@ -77,7 +77,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           inputRef={inputRef}
           fullWidth
           multiline
-          maxRows={4}
+          maxRows={2}
           value={value}
           onChange={(e) => {
             if (e.target.value.length <= maxLength) {
@@ -126,9 +126,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               },
             },
             '& .MuiOutlinedInput-input': {
-              fontSize: '0.95rem',
-              lineHeight: 1.5,
-              padding: '14px 20px',
+              fontSize: '1rem',
+              lineHeight: 1.3,
+              padding: '6px 12px',
               '&::placeholder': {
                 color: theme.palette.grey[500],
                 opacity: 0.8,
@@ -145,8 +145,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           onClick={handleSend}
           disabled={isSendDisabled}
           sx={{
-            width: 56,
-            height: 56,
+            width: 48,
+            height: 48,
             borderRadius: '50%',
             backgroundColor: isSendDisabled ? 'action.disabledBackground' : 'primary.main',
             color: isSendDisabled ? 'action.disabled' : 'primary.contrastText',
@@ -163,7 +163,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             flexShrink: 0,
           }}
         >
-          <SendIcon sx={{ fontSize: '1.4rem' }} />
+          <SendIcon sx={{ fontSize: '1.3rem' }} />
         </IconButton>
     </Box>
   );

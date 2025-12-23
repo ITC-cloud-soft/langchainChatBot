@@ -256,7 +256,7 @@ class ChatHistoryService:
                 if metadata is not None:
                     session.metadata = metadata
                 
-                session.updated_at = datetime.utcnow()
+                session.updated_at = datetime.now()
                 await db_session.commit()
                 await db_session.refresh(session)
                 
@@ -375,7 +375,7 @@ class ChatHistoryService:
         try:
             async with database_manager.get_session() as db_session:
                 # Calculate cutoff date
-                cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+                cutoff_date = datetime.now() - timedelta(days=days_old)
                 
                 # Find old inactive sessions
                 old_sessions_query = select(ChatSession).where(

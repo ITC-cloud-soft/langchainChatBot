@@ -381,13 +381,13 @@ async def chat_health_check():
             "status": overall_status,
             "chat_service": chat_health,
             "database": db_health,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
         return {
             "status": "unhealthy",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
 
 

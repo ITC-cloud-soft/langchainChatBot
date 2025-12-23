@@ -17,6 +17,10 @@ from api.middleware import CurrentUser, get_current_admin_user, get_current_acti
 
 # Create router
 router = APIRouter()
+
+# LLM test timeout (in seconds) - for local models that may take time to start
+LLM_TEST_TIMEOUT = int(os.getenv("LLM_TEST_TIMEOUT", "120"))
+
 class LLMConfig(BaseModel):
     """LLM configuration model"""
     provider: str = "openai"
@@ -367,8 +371,11 @@ async def test_llm_config(
                 presence_penalty=config.presence_penalty
             )
         
-        # Test with a simple prompt
-        test_response = test_llm.invoke("Hello, this is a test.")
+        # Test with a simple prompt with timeout
+        test_response = test_llm.invoke(
+            "Hello, this is a test.",
+            config={"timeout": LLM_TEST_TIMEOUT}
+        )
         
         if test_response:
             return ConfigStatus(

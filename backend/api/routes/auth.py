@@ -138,7 +138,7 @@ async def login(
         )
     
     # Update last login time
-    user.last_login = datetime.utcnow()
+    user.last_login = datetime.now()
     await db.commit()
     
     # Generate tokens
@@ -191,7 +191,7 @@ async def login_oauth2(
         )
     
     # Update last login time
-    user.last_login = datetime.utcnow()
+    user.last_login = datetime.now()
     await db.commit()
     
     # Generate tokens
@@ -270,7 +270,7 @@ async def get_current_user_info(
         full_name=current_user.full_name,
         role=current_user.role,
         is_active=True,
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now().isoformat(),
         last_login=None
     )
 
@@ -302,7 +302,7 @@ async def change_password(
     
     # Hash and update new password
     user.hashed_password = PasswordManager.hash_password(password_data.new_password)
-    user.updated_at = datetime.utcnow()
+    user.updated_at = datetime.now()
     
     await db.commit()
     

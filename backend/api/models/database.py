@@ -27,8 +27,8 @@ class ChatSession(Base):
     session_id = Column(String(255), unique=True, index=True, nullable=False)
     title = Column(String(500), nullable=True)
     user_id = Column(String(255), nullable=True, index=True)  # Legacy field, kept for compatibility
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     session_metadata = Column("metadata", JSON, nullable=True)
     
@@ -66,7 +66,7 @@ class ChatMessage(Base):
     role = Column(String(50), nullable=False, index=True)  # 'user', 'assistant', 'system'
     content = Column(LONGTEXT, nullable=False)
     message_type = Column(String(50), default="text", nullable=False)  # 'text', 'file', 'error'
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime, default=datetime.now, nullable=False)
     source_documents = Column(JSON, nullable=True)  # List of source documents
     error_info = Column(JSON, nullable=True)  # Error information if message failed
     message_metadata = Column("metadata", JSON, nullable=True)
@@ -109,8 +109,8 @@ class ChatMetadata(Base):
     language = Column(String(10), default="ja", nullable=False)
     tags = Column(JSON, nullable=True)  # List of tags for categorization
     custom_fields = Column(JSON, nullable=True)  # Custom user-defined fields
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
     
     # Relationship with session
     session = relationship("ChatSession", foreign_keys=[session_id])
@@ -148,8 +148,8 @@ class ChatHistoryStats(Base):
     total_messages = Column(Integer, default=0, nullable=False)
     total_users = Column(Integer, default=0, nullable=False)
     avg_session_length = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
     
     def __repr__(self):
         return f"<ChatHistoryStats(date='{self.date}', total_sessions={self.total_sessions})>"
@@ -232,7 +232,7 @@ def add_chat_message(
     chat_meta = db.query(ChatMetadata).filter(ChatMetadata.session_id == session_id).first()
     if chat_meta:
         chat_meta.total_messages += 1
-        chat_meta.updated_at = datetime.utcnow()
+        chat_meta.updated_at = datetime.now()
         
         if role == "user":
             chat_meta.last_user_message = content[:255]
@@ -242,7 +242,7 @@ def add_chat_message(
         # Update session updated_at
         session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
         if session:
-            session.updated_at = datetime.utcnow()
+            session.updated_at = datetime.now()
     
     db.commit()
     db.refresh(message)
@@ -415,7 +415,7 @@ async def add_chat_message_async(
     chat_meta = metadata_result.scalar_one_or_none()
     if chat_meta:
         chat_meta.total_messages += 1
-        chat_meta.updated_at = datetime.utcnow()
+        chat_meta.updated_at = datetime.now()
         
         if role == "user":
             chat_meta.last_user_message = content[:255]
@@ -428,7 +428,7 @@ async def add_chat_message_async(
     )
     session = update_session.scalar_one_or_none()
     if session:
-        session.updated_at = datetime.utcnow()
+        session.updated_at = datetime.now()
     
     await db.commit()
     await db.refresh(message)
