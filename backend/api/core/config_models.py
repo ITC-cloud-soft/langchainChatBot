@@ -106,10 +106,10 @@ class LlmConfig(BaseModel):
     api_key: str = Field(default="nokey", description="LLM APIのキー")
     model_name: str = Field(default="gpt-3.5-turbo", description="使用するLLMモデル名")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="生成の多様性（0.0-2.0）")
-    max_tokens: int = Field(default=128000, ge=1, description="最大トークン数")
-    top_p: float = Field(default=1.0, ge=0.0, le=1.0, description="トークン選択の確率閾値（0.0-1.0）")
-    frequency_penalty: float = Field(default=0.0, ge=-2.0, le=2.0, description="頻度ペナルティ（-2.0-2.0）")
-    presence_penalty: float = Field(default=0.0, ge=-2.0, le=2.0, description="存在ペナルティ（-2.0-2.0）")
+    max_tokens: int = Field(default=2048, ge=1, description="最大トークン数")
+    top_p: float = Field(default=0.9, ge=0.0, le=1.0, description="トークン選択の確率閾値（0.0-1.0）")
+    frequency_penalty: float = Field(default=0.2, ge=-2.0, le=2.0, description="頻度ペナルティ（-2.0-2.0）")
+    presence_penalty: float = Field(default=0.1, ge=-2.0, le=2.0, description="存在ペナルティ（-2.0-2.0）")
     
     @field_validator('provider')
     @classmethod
