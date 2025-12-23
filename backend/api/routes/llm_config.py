@@ -29,10 +29,18 @@ class LLMConfig(BaseModel):
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
 
+class ModelInfo(BaseModel):
+    """Model information with availability status"""
+    name: str
+    available: bool = True
+    tier: str = "free"  # "free", "limited", "paid"
+    description: str = ""
+
 class LLMConfigResponse(BaseModel):
     """LLM configuration response model"""
     config: LLMConfig
-    available_models: List[str]
+    available_models: List[str]  # For backward compatibility
+    models_info: List[ModelInfo] = []  # New structured model info
     status: str
 
 class ConfigStatus(BaseModel):
@@ -52,6 +60,44 @@ current_llm_config = {
     "frequency_penalty": 0.0,
     "presence_penalty": 0.0
 }
+
+def classify_model_tier(model_name: str, provider: str = "") -> tuple[bool, str, str]:
+    """Classify model tier and availability based on name and provider
+    Returns: (available, tier, description)
+    """
+    model_lower = model_name.lower()
+    
+    # Gemini models classification
+    if "gemini" in model_lower:
+        if "2.5-pro" in model_lower or "2.0-pro" in model_lower:
+            return (False, "paid", "高級モデル - 有料プランが必要")
+        elif "1.5-pro" in model_lower and "latest" not in model_lower:
+            return (True, "limited", "制限付き無料 - 1日50リクエスト")
+        elif "1.5-flash" in model_lower:
+            return (True, "free", "推奨 - 無料枠が大きい")
+        elif "pro" in model_lower and "vision" not in model_lower:
+            return (False, "deprecated", "非推奨 - 廃止されたモデル")
+    
+    # OpenAI models classification
+    if "gpt" in model_lower:
+        if "gpt-4" in model_lower and "turbo" not in model_lower and "mini" not in model_lower:
+            return (True, "paid", "高性能 - 従量課金")
+        elif "gpt-4o" in model_lower or "gpt-4-turbo" in model_lower:
+            return (True, "paid", "最新モデル - 従量課金")
+        elif "gpt-3.5" in model_lower:
+            return (True, "free", "標準モデル")
+    
+    # Claude models classification
+    if "claude" in model_lower:
+        if "opus" in model_lower:
+            return (True, "paid", "最高性能 - 従量課金")
+        elif "sonnet" in model_lower:
+            return (True, "paid", "バランス型 - 従量課金")
+        elif "haiku" in model_lower:
+            return (True, "free", "高速・低コスト")
+    
+    # Default: assume available
+    return (True, "free", "")
 
 async def get_models_from_api(api_base: str, api_key: str = "") -> List[str]:
     """Get available models from the specified API Base URL"""
@@ -93,13 +139,48 @@ async def get_models_from_api(api_base: str, api_key: str = "") -> List[str]:
                         "gpt-3.5-turbo"
                     ]
         elif "generativelanguage.googleapis.com" in api_base:
-            # Google Gemini models
-            return [
-                "gemini-1.5-pro",
-                "gemini-1.5-flash",
-                "gemini-pro",
-                "gemini-pro-vision"
-            ]
+            # Google Gemini models - try to fetch dynamically
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Gemini API uses API key as query parameter
+                models_url = f"https://generativelanguage.googleapis.com/v1beta/models"
+                params = {}
+                if api_key:
+                    params["key"] = api_key
+                
+                try:
+                    response = await client.get(models_url, params=params)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        models = data.get("models", [])
+                        # Filter for generateContent-capable models and extract model names
+                        model_names = []
+                        for model in models:
+                            model_name = model.get("name", "")
+                            # Extract just the model ID (e.g., "models/gemini-1.5-flash" -> "gemini-1.5-flash")
+                            if model_name.startswith("models/"):
+                                model_id = model_name.replace("models/", "")
+                                # Check if model supports generateContent
+                                supported_methods = model.get("supportedGenerationMethods", [])
+                                if "generateContent" in supported_methods:
+                                    model_names.append(model_id)
+                        
+                        if model_names:
+                            default_logger.info(f"Successfully fetched {len(model_names)} Gemini models from API")
+                            return model_names
+                    else:
+                        default_logger.warning(f"Gemini API returned status {response.status_code}")
+                except Exception as e:
+                    default_logger.warning(f"Error fetching Gemini models: {e}")
+                
+                # Fallback to known models if API call fails
+                default_logger.info("Using fallback Gemini model list")
+                return [
+                    "gemini-1.5-pro",
+                    "gemini-1.5-flash",
+                    "gemini-1.5-pro-latest",
+                    "gemini-1.5-flash-latest"
+                ]
         
         # For other APIs, try OpenAI-compatible endpoint first
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -154,7 +235,6 @@ async def get_models_from_api(api_base: str, api_key: str = "") -> List[str]:
         default_logger.error(f"Error getting models from API {api_base}: {e}")
         return []
 
-
 @router.get("/config", response_model=LLMConfigResponse)
 async def get_llm_config(
     current_user: Annotated[Optional[CurrentUser], Depends(get_optional_user)] = None
@@ -176,9 +256,22 @@ async def get_llm_config(
     # Get available models from the configured API
     models = await get_models_from_api(llm_config["api_base"], llm_config["api_key"])
     
+    # Create structured model info with availability status
+    provider = llm_config["provider"]
+    models_info = []
+    for model_name in models:
+        available, tier, description = classify_model_tier(model_name, provider)
+        models_info.append(ModelInfo(
+            name=model_name,
+            available=available,
+            tier=tier,
+            description=description
+        ))
+    
     return LLMConfigResponse(
         config=LLMConfig(**llm_config),
-        available_models=models,
+        available_models=models,  # For backward compatibility
+        models_info=models_info,
         status="active"
     )
 
@@ -236,20 +329,43 @@ async def test_llm_config(
 ):
     """Test LLM configuration (Admin only)"""
     try:
-        # Import here to avoid circular imports
-        from langchain_openai import ChatOpenAI
-        
-        # Create a test LLM instance
-        test_llm = ChatOpenAI(
-            base_url=config.api_base,
-            api_key=config.api_key,
-            model=config.model_name,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-            top_p=config.top_p,
-            frequency_penalty=config.frequency_penalty,
-            presence_penalty=config.presence_penalty
-        )
+        # Create appropriate LLM instance based on provider
+        if config.provider == "gemini":
+            # Use native Gemini API
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            
+            test_llm = ChatGoogleGenerativeAI(
+                google_api_key=config.api_key,
+                model=config.model_name,
+                temperature=config.temperature,
+                max_output_tokens=config.max_tokens,
+                top_p=config.top_p
+            )
+        elif config.provider == "anthropic":
+            # Use native Anthropic API
+            from langchain_anthropic import ChatAnthropic
+            
+            test_llm = ChatAnthropic(
+                anthropic_api_key=config.api_key,
+                model=config.model_name,
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,
+                top_p=config.top_p
+            )
+        else:
+            # Use OpenAI-compatible API (openai, カスタム, etc.)
+            from langchain_openai import ChatOpenAI
+            
+            test_llm = ChatOpenAI(
+                base_url=config.api_base,
+                api_key=config.api_key,
+                model=config.model_name,
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,
+                top_p=config.top_p,
+                frequency_penalty=config.frequency_penalty,
+                presence_penalty=config.presence_penalty
+            )
         
         # Test with a simple prompt
         test_response = test_llm.invoke("Hello, this is a test.")

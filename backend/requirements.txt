@@ -18,6 +18,7 @@ langchain==0.3.27
 langchain-community==0.3.27
 langchain-openai==0.3.28
 langchain-anthropic==0.3.3
+langchain-google-genai==2.0.8
 langchain-ollama==0.3.6
 langchain-qdrant==0.2.0
 

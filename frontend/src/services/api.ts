@@ -4,6 +4,10 @@ import { logger } from '../utils/logger';
 // API base URL - in development, this will be proxied to the backend
 const API_BASE_URL = (import.meta as any).env.VITE_API_URL ?? 'http://localhost:8000';
 
+// Test timeout for LLM/Embedding config tests (in milliseconds)
+// Default: 120 seconds for local models that may take time to start
+const TEST_TIMEOUT = parseInt((import.meta as any).env.VITE_TEST_TIMEOUT ?? '120000', 10);
+
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -389,7 +393,9 @@ export const llmConfigApi = {
   },
 
   testConfig: async (config: Record<string, unknown>) => {
-    const response = await api.post('/api/llm/config/test', config);
+    const response = await api.post('/api/llm/config/test', config, {
+      timeout: TEST_TIMEOUT,
+    });
     return response.data;
   },
 
@@ -449,7 +455,9 @@ export const embeddingConfigApi = {
   },
 
   testConfig: async (config: Record<string, unknown>) => {
-    const response = await api.post('/api/embedding/config/test', config);
+    const response = await api.post('/api/embedding/config/test', config, {
+      timeout: TEST_TIMEOUT,
+    });
     return response.data;
   },
 

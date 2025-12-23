@@ -13,6 +13,7 @@ from datetime import datetime
 
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA, ConversationalRetrievalChain
 from langchain.prompts import PromptTemplate
 from langchain.callbacks.base import BaseCallbackHandler
@@ -125,7 +126,15 @@ class ChatService(BaseService):
             
             self.log_info(f"Initializing LLM with provider: {provider}, model: {model_name}, api_base: {api_base}")
             
-            if provider == "anthropic":
+            if provider == "gemini":
+                self.log_info("Creating ChatGoogleGenerativeAI instance")
+                self.llm = ChatGoogleGenerativeAI(
+                    google_api_key=api_key,
+                    model=model_name,
+                    temperature=temperature,
+                    streaming=True
+                )
+            elif provider == "anthropic":
                 self.log_info("Creating ChatAnthropic instance")
                 self.llm = ChatAnthropic(
                     anthropic_api_key=api_key,
