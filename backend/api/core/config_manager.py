@@ -88,6 +88,7 @@ class ConfigManager:
         try:
             # 環境変数マッピング
             env_mappings = {
+                'CORS_ORIGINS': ('cors', 'origins'),
                 'MYSQL_HOST': ('database', 'host'),
                 'MYSQL_PORT': ('database', 'port'),
                 'MYSQL_USER': ('database', 'username'),
@@ -136,12 +137,21 @@ class ConfigManager:
                             if field_type == bool:
                                 env_value = env_value.lower() in ('true', '1', 'yes', 'on')
                             elif field_type == int:
+                                # String stripping for integer configuration values
+                                if isinstance(env_value, str):
+                                    env_value = env_value.strip()
                                 env_value = int(env_value)
                             elif field_type == float:
                                 env_value = float(env_value)
                             elif field_type == list and isinstance(env_value, str):
                                 import json
-                                env_value = json.loads(env_value)
+                                try:
+                                    env_value = json.loads(env_value)
+                                except Exception:
+                                    env_value = [item.strip() for item in env_value.split(',') if item.strip()]
+                            elif field_type == str:
+                                # String stripping for string configuration values (including URLs)
+                                env_value = env_value.strip()
                             
                             setattr(section_obj, field, env_value)
             

@@ -43,13 +43,8 @@ api.interceptors.response.use(
       const { status, data } = error.response;
 
       // Handle specific error status codes
-      if (status === 401) {
-        // Unauthorized - clear tokens and redirect to login
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('auth_token'); // legacy
-        window.location.href = '/login';
-      } else if (status === 403) {
+      // Note: 401 is handled by authService's interceptor for token refresh
+      if (status === 403) {
         // Forbidden - insufficient permissions
         logger.error('Forbidden: Insufficient permissions');
       } else if (status === 404) {

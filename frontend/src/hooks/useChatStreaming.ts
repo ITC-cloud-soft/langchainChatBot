@@ -147,8 +147,38 @@ export const useChatStreaming = ({
             ];
           });
         } else {
-          setError(error.message || 'メッセージの送信中にエラーが発生しました');
-          enqueueSnackbar('メッセージの送信中にエラーが発生しました', { variant: 'error' });
+          const errorMessage = error.message || 'メッセージの送信中にエラーが発生しました';
+          
+          setError(errorMessage);
+          enqueueSnackbar(`エラー: ${errorMessage}`, { variant: 'error' });
+
+          // エラータイプに応じてユーザーフレンドリーな日本語メッセージを提供
+          let userFriendlyMessage = '申し訳ありませんが、メッセージの処理中にエラーが発生しました。\n\n';
+          
+          if (errorMessage.includes('Connection error') || errorMessage.includes('Network response was not ok')) {
+            userFriendlyMessage += '**問題の原因：** AI モデルサービスに接続できません\n\n';
+            userFriendlyMessage += '**考えられる原因：**\n';
+            userFriendlyMessage += '1. LLM API の設定が正しくないか、未設定です\n';
+            userFriendlyMessage += '2. API サービスのアドレスにアクセスできません\n';
+            userFriendlyMessage += '3. API Key が無効または期限切れです\n\n';
+            userFriendlyMessage += '**解決方法：**\n';
+            userFriendlyMessage += '- 「LLM 設定」ページで正しい API 情報を確認・設定してください\n';
+            userFriendlyMessage += '- API サービスが実行中でアクセス可能であることを確認してください\n';
+            userFriendlyMessage += '- Ollama を使用する場合は、モデルがダウンロード済みでサービスが起動していることを確認してください';
+          } else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+            userFriendlyMessage += '**問題の原因：** API 認証に失敗しました\n\n';
+            userFriendlyMessage += '**解決方法：**\n';
+            userFriendlyMessage += '- API Key が正しいか確認してください\n';
+            userFriendlyMessage += '- API Key が有効で期限切れでないか確認してください';
+          } else if (errorMessage.includes('404')) {
+            userFriendlyMessage += '**問題の原因：** API エンドポイントが存在しません\n\n';
+            userFriendlyMessage += '**解決方法：**\n';
+            userFriendlyMessage += '- API Base URL が正しいか確認してください\n';
+            userFriendlyMessage += '- URL 形式に必要なパス（例：/v1）が含まれているか確認してください';
+          } else {
+            userFriendlyMessage += `**エラー情報：** ${errorMessage}\n\n`;
+            userFriendlyMessage += '**推奨事項：** 管理者に連絡するか、システムログで詳細情報を確認してください';
+          }
 
           // エラーメッセージを追加
           onMessageUpdate(prev => {
@@ -159,7 +189,7 @@ export const useChatStreaming = ({
               {
                 id: generateMessageId(),
                 role: 'assistant',
-                content: '申し訳ありませんが、メッセージの処理中にエラーが発生しました。',
+                content: userFriendlyMessage,
                 timestamp: new Date().toISOString(),
               },
             ];
