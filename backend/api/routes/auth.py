@@ -223,12 +223,19 @@ async def refresh_token(
     """
     Refresh access token using refresh token
     """
+    import logging
+    logger = logging.getLogger("chatbot_app")
+    
     try:
+        logger.info("Token refresh attempt")
+        
         # Decode refresh token
         payload = TokenManager.decode_token(refresh_data.refresh_token)
+        logger.info(f"Token decoded successfully, type: {payload.get('type')}")
         
         # Verify it's a refresh token
         if payload.get("type") != "refresh":
+            logger.warning(f"Invalid token type: {payload.get('type')}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type"
@@ -237,6 +244,7 @@ async def refresh_token(
         # Extract user info
         user_id = int(payload.get("sub"))
         role = payload.get("role")
+        logger.info(f"Creating new access token for user_id: {user_id}")
         
         # Create new access token
         new_access_token = TokenManager.create_access_token({
@@ -244,15 +252,19 @@ async def refresh_token(
             "role": role
         })
         
+        logger.info("Token refresh successful")
         return TokenRefreshResponse(
             access_token=new_access_token,
             token_type="bearer"
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Token refresh failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token"
+            detail=f"Invalid refresh token: {str(e)}"
         )
 
 
