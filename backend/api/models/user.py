@@ -189,3 +189,51 @@ async def create_or_update_ars_token(
     await db.commit()
     await db.refresh(existing_token)
     return existing_token
+
+
+class ArsSystemPrompt(Base):
+    """ARS System Prompt Model - stores system prompts fetched from ARS"""
+    __tablename__ = "ars_system_prompts"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, unique=True)
+    prompt = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    
+    user = relationship("User", back_populates="ars_system_prompt")
+
+
+# Update User model relationship
+User.ars_system_prompt = relationship("ArsSystemPrompt", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+
+async def get_ars_system_prompt_by_user(db: AsyncSession, user_id: int) -> Optional[ArsSystemPrompt]:
+    """Get ARS system prompt for a user"""
+    result = await db.execute(
+        select(ArsSystemPrompt).where(ArsSystemPrompt.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_or_update_ars_system_prompt(
+    db: AsyncSession,
+    user_id: int,
+    prompt: str
+) -> ArsSystemPrompt:
+    """Create or update ARS system prompt for a user"""
+    existing_prompt = await get_ars_system_prompt_by_user(db, user_id)
+    
+    if existing_prompt:
+        existing_prompt.prompt = prompt
+        existing_prompt.updated_at = datetime.now()
+    else:
+        existing_prompt = ArsSystemPrompt(
+            user_id=user_id,
+            prompt=prompt
+        )
+        db.add(existing_prompt)
+    
+    await db.commit()
+    await db.refresh(existing_prompt)
+    return existing_prompt

@@ -40,6 +40,8 @@ const ArsConfigPage: React.FC = () => {
     timeout: 30,
     retryCount: 3,
   });
+  const [systemPrompt, setSystemPrompt] = useState<string>('');
+  const [lastUpdated, setLastUpdated] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -55,13 +57,15 @@ const ArsConfigPage: React.FC = () => {
     try {
       const response = await axios.get('/api/ars-settings');
       if (response.data && response.data.data) {
-        // Backend returns {data: {apiKey: "..."}}
+        // Backend returns {data: {apiKey: "..."}, systemPrompt: "...", lastUpdated: "..."}
         setConfig({
           apiKey: response.data.data.apiKey || '',
           apiEndpoint: '',  // Will be filled by user or use backend default
           timeout: 30,
           retryCount: 3,
         });
+        setSystemPrompt(response.data.systemPrompt || '');
+        setLastUpdated(response.data.lastUpdated || '');
       } else {
         // デフォルト設定をセット
         setConfig({
@@ -70,6 +74,8 @@ const ArsConfigPage: React.FC = () => {
           timeout: 30,
           retryCount: 3,
         });
+        setSystemPrompt('');
+        setLastUpdated('');
       }
     } catch (error) {
       console.error('ARS設定の読み込みに失敗しました:', error);
@@ -80,6 +86,8 @@ const ArsConfigPage: React.FC = () => {
         timeout: 30,
         retryCount: 3,
       });
+      setSystemPrompt('');
+      setLastUpdated('');
     } finally {
       setIsLoading(false);
     }
@@ -123,6 +131,27 @@ const ArsConfigPage: React.FC = () => {
     } catch (error) {
       console.error('ARS接続テストに失敗しました:', error);
       enqueueSnackbar('ARS接続テストに失敗しました', { variant: 'error' });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleUpdatePrompt = async () => {
+    if (!config.apiKey || config.apiKey.trim() === '') {
+      enqueueSnackbar('APIキーを保存してください', { variant: 'warning' });
+      return;
+    }
+
+    setIsTesting(true);
+    try {
+      const response = await axios.post('/api/ars-settings/update-prompt');
+      enqueueSnackbar('システムプロンプトを更新しました', { variant: 'success' });
+      // Reload config to show updated prompt
+      await loadConfig();
+    } catch (error: any) {
+      console.error('システムプロンプト更新に失敗しました:', error);
+      const errorMessage = error.response?.data?.detail || 'システムプロンプトの更新に失敗しました';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
     } finally {
       setIsTesting(false);
     }
@@ -228,7 +257,7 @@ const ArsConfigPage: React.FC = () => {
 
             <Divider sx={{ my: 3 }} />
 
-            <Box sx={{ display: 'flex', gap: 2 }}>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <Button
                 variant="contained"
                 color="primary"
@@ -246,6 +275,16 @@ const ArsConfigPage: React.FC = () => {
                 disabled={isSaving || isTesting}
               >
                 接続テスト
+              </Button>
+
+              <Button
+                variant="outlined"
+                color="secondary"
+                startIcon={isTesting ? <CircularProgress size={20} /> : <RefreshIcon />}
+                onClick={handleUpdatePrompt}
+                disabled={isSaving || isTesting}
+              >
+                プロンプト更新
               </Button>
             </Box>
           </Paper>
@@ -272,6 +311,37 @@ const ArsConfigPage: React.FC = () => {
                   <strong>リトライ回数:</strong> {config.retryCount}回
                 </Typography>
               </Box>
+
+              <Divider sx={{ my: 2 }} />
+
+              <Typography variant="subtitle2" gutterBottom>
+                システムプロンプト
+              </Typography>
+              {systemPrompt ? (
+                <Box>
+                  <TextField
+                    fullWidth
+                    multiline
+                    rows={6}
+                    value={systemPrompt}
+                    InputProps={{
+                      readOnly: true,
+                    }}
+                    sx={{ mb: 1, fontSize: '0.875rem' }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    最終更新: {lastUpdated ? new Date(lastUpdated).toLocaleString('ja-JP') : '不明'}
+                  </Typography>
+                </Box>
+              ) : (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    システムプロンプトはまだ取得されていません。
+                    <br />
+                    APIキーを保存後、30分以内に自動的に取得されます。
+                  </Typography>
+                </Alert>
+              )}
 
               <Divider sx={{ my: 2 }} />
 

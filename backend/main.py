@@ -88,8 +88,27 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning(f"Service '{service_name}' initialization failed")
     
+    # Start ARS scheduler if database is initialized
+    if db_initialized:
+        try:
+            from api.tasks.ars_scheduler import start_ars_scheduler
+            # Update system prompts every 30 minutes
+            update_interval = int(os.getenv("ARS_UPDATE_INTERVAL_MINUTES", "30"))
+            start_ars_scheduler(update_interval_minutes=update_interval)
+            logger.info(f"ARS scheduler started with {update_interval} minute interval")
+        except Exception as e:
+            logger.warning(f"Failed to start ARS scheduler: {e}")
+    
     yield
     # Shutdown
+    # Stop ARS scheduler
+    try:
+        from api.tasks.ars_scheduler import stop_ars_scheduler
+        stop_ars_scheduler()
+        logger.info("ARS scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error stopping ARS scheduler: {e}")
+    
     # Cleanup database connections
     try:
         await cleanup_database_on_shutdown()

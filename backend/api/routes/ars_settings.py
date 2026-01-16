@@ -19,6 +19,7 @@ from api.core.database import get_db_session
 from api.models.user import (
     get_ars_token_by_user,
     create_or_update_ars_token,
+    get_ars_system_prompt_by_user,
     ApiArsToken
 )
 from api.middleware import CurrentUser, get_current_user
@@ -40,6 +41,8 @@ _token_cache = {
 class ArsSettingsResponse(BaseModel):
     """ARS settings response model"""
     data: dict
+    systemPrompt: Optional[str] = None
+    lastUpdated: Optional[str] = None
 
 
 class ArsSettingsSaveRequest(BaseModel):
@@ -92,8 +95,15 @@ async def get_ars_settings(
         else:
             token = ''
     
+    # Get system prompt if exists
+    system_prompt_obj = await get_ars_system_prompt_by_user(db, user_id)
+    system_prompt = system_prompt_obj.prompt if system_prompt_obj else None
+    last_updated = system_prompt_obj.updated_at.isoformat() if system_prompt_obj else None
+    
     return ArsSettingsResponse(
-        data={"apiKey": token}
+        data={"apiKey": token},
+        systemPrompt=system_prompt,
+        lastUpdated=last_updated
     )
 
 
@@ -176,3 +186,44 @@ async def test_ars_connection(
         "endpoint": endpoint,
         "timeout": request.timeout
     }
+
+
+@router.post("/ars-settings/update-prompt")
+async def update_system_prompt(
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Manually trigger system prompt update from ARS
+    
+    Fetches the latest system prompt from ARS API and saves it to database.
+    """
+    from api.services.ars_service import ArsService
+    
+    user_id = current_user.user_id
+    logger.info(f"手動システムプロンプト更新: ユーザーID = {user_id}")
+    
+    try:
+        # Trigger update for current user
+        system_prompt = await ArsService.update_system_prompt_for_user(db, user_id)
+        
+        if system_prompt:
+            logger.info(f"システムプロンプト更新成功: ユーザーID = {user_id}")
+            return {
+                "result": "success",
+                "message": "システムプロンプトを更新しました",
+                "prompt": system_prompt[:100] + "..." if len(system_prompt) > 100 else system_prompt
+            }
+        else:
+            logger.warning(f"システムプロンプト更新失敗: ユーザーID = {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="システムプロンプトの取得に失敗しました。APIキーが正しく設定されているか確認してください。"
+            )
+            
+    except Exception as e:
+        logger.error(f"システムプロンプト更新エラー: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"システムプロンプトの更新中にエラーが発生しました: {str(e)}"
+        )
