@@ -82,7 +82,7 @@ function App() {
                           }
                         />
                         <Route
-                          path="/ars-config"
+                          path="/ars-settings"
                           element={
                             <PrivateRoute requireAdmin>
                               <ArsConfigPage />

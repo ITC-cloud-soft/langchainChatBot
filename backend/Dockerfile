@@ -55,6 +55,7 @@ WORKDIR /app
 COPY --from=builder --chown=app:app /backend/api /app/api
 COPY --from=builder --chown=app:app /backend/main.py /app/main.py
 COPY --from=builder --chown=app:app /backend/migrate_db.py /app/migrate_db.py
+COPY --from=builder --chown=app:app /backend/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=app:app /backend/config.toml.example /app/config.toml
 
 # アップロードディレクトリの作成（非rootユーザーで書き込み可能にする）

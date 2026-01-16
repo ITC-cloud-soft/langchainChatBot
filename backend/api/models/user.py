@@ -48,6 +48,7 @@ class User(Base):
     
     # Relationships
     chat_sessions = relationship("ChatSession", back_populates="user", foreign_keys="ChatSession.user_id_int")
+    ars_tokens = relationship("ApiArsToken", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
@@ -120,3 +121,71 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+class ApiArsToken(Base):
+    """
+    ARS API Token model for storing user-specific ARS API keys
+    """
+    __tablename__ = "api_ars_tokens"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_type = Column(String(16), nullable=False, default="token")
+    token = Column(String(255), nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    
+    # Relationship
+    user = relationship("User", back_populates="ars_tokens")
+    
+    def __repr__(self):
+        return f"<ApiArsToken(id={self.id}, user_id={self.user_id}, type='{self.token_type}')>"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary"""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "token_type": self.token_type,
+            "token": self.token,
+            "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+# Utility functions for ARS token operations
+
+async def get_ars_token_by_user(db: AsyncSession, user_id: int) -> Optional[ApiArsToken]:
+    """Get ARS token by user ID"""
+    result = await db.execute(
+        select(ApiArsToken).where(ApiArsToken.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_or_update_ars_token(
+    db: AsyncSession,
+    user_id: int,
+    token: str,
+    token_type: str = "token"
+) -> ApiArsToken:
+    """Create or update ARS token for a user"""
+    existing_token = await get_ars_token_by_user(db, user_id)
+    
+    if existing_token:
+        existing_token.token = token
+        existing_token.last_used_at = datetime.now()
+        existing_token.token_type = token_type
+    else:
+        existing_token = ApiArsToken(
+            user_id=user_id,
+            token=token,
+            token_type=token_type,
+            last_used_at=datetime.now()
+        )
+        db.add(existing_token)
+    
+    await db.commit()
+    await db.refresh(existing_token)
+    return existing_token

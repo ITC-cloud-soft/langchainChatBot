@@ -297,7 +297,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     ...(isAdmin ? [
       { text: 'LLM設定', icon: <SettingsIcon />, path: '/llm-config' },
       { text: 'ナレッジ設定', icon: <KnowledgeIcon />, path: '/knowledge' },
-      { text: 'ARS設定', icon: <BuildIcon />, path: '/ars-config' },
+      { text: 'ARS設定', icon: <BuildIcon />, path: '/ars-settings' },
       { text: 'ユーザー管理', icon: <PeopleIcon />, path: '/users' }
     ] : []),
   ];

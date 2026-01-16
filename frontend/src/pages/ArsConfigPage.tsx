@@ -54,13 +54,19 @@ const ArsConfigPage: React.FC = () => {
     setIsLoading(true);
     try {
       const response = await axios.get('/api/ars-settings');
-      if (response.data) {
-        setConfig(response.data);
+      if (response.data && response.data.data) {
+        // Backend returns {data: {apiKey: "..."}}
+        setConfig({
+          apiKey: response.data.data.apiKey || '',
+          apiEndpoint: '',  // Will be filled by user or use backend default
+          timeout: 30,
+          retryCount: 3,
+        });
       } else {
         // デフォルト設定をセット
         setConfig({
           apiKey: '',
-          apiEndpoint: 'http://localhost:5050',
+          apiEndpoint: '',
           timeout: 30,
           retryCount: 3,
         });
@@ -70,7 +76,7 @@ const ArsConfigPage: React.FC = () => {
       // エラー時にデフォルト設定をセット
       setConfig({
         apiKey: '',
-        apiEndpoint: 'http://localhost:5050',
+        apiEndpoint: '',
         timeout: 30,
         retryCount: 3,
       });
@@ -190,8 +196,8 @@ const ArsConfigPage: React.FC = () => {
                   label="API エンドポイント"
                   value={config.apiEndpoint}
                   onChange={e => handleInputChange('apiEndpoint', e.target.value)}
-                  placeholder="http://localhost:5050"
-                  helperText="ARS APIのエンドポイントURL（デフォルト: http://localhost:5050）"
+                  placeholder="空欄の場合はサーバーのデフォルト設定を使用"
+                  helperText="ARS APIのエンドポイントURL（オプション）。空欄の場合はサーバー側の環境変数設定を使用します。"
                 />
               </Grid>
 
