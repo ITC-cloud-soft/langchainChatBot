@@ -66,7 +66,7 @@ async def get_ars_settings(
     Returns the ARS API key stored for the current user.
     Uses caching to improve performance.
     """
-    user_id = current_user.id
+    user_id = current_user.user_id
     logger.info(f"ARS設定の取得: ユーザーID = {user_id}")
     
     # Check cache
@@ -108,7 +108,7 @@ async def save_ars_settings(
     
     Creates or updates the ARS API key for the current user.
     """
-    user_id = current_user.id
+    user_id = current_user.user_id
     api_key = request.apiKey
     
     logger.info(f"ARS設定の保存: ユーザーID = {user_id}, API Key = {api_key[:5] if api_key else 'empty'}...")
@@ -153,7 +153,7 @@ async def test_ars_connection(
     Tests the connection to ARS service with provided credentials.
     This is a placeholder - actual implementation would make a real API call to ARS.
     """
-    user_id = current_user.id
+    user_id = current_user.user_id
     logger.info(f"ARS接続テスト: ユーザーID = {user_id}")
     
     # Use provided endpoint or default from environment
