@@ -13,10 +13,14 @@ from pydantic import BaseModel, field_validator
 import json
 
 from api.core.qdrant_manager import qdrant_manager
-from api.core.database import database_manager
+from api.core.database import database_manager, get_db_session
 from api.core.utils import handle_exceptions, default_logger, format_success_response
 from api.services.chat_service import chat_service
 from api.services.chat_history_service import chat_history_service
+from api.middleware import CurrentUser, get_current_user, get_optional_current_user
+from api.models.user import get_ars_system_prompt_by_user
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
 
 # Create router
 router = APIRouter()
@@ -91,38 +95,67 @@ class ChatHistoryResponse(BaseModel):
 # Chat service is already initialized in main.py
 
 @router.post("/send", response_model=ChatResponse)
-async def send_message(chat_message: ChatMessage):
+async def send_message(
+    chat_message: ChatMessage,
+    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)]
+):
     """Send a message to the chatbot and get a response"""
     try:
         # Debug logging
         default_logger.info(f"Received send request: message='{chat_message.message}', session_id='{chat_message.session_id}'")
         
+        # Get ARS system prompt from database if not provided and user is authenticated
+        system_prompt = chat_message.system_prompt
+        if not system_prompt and current_user:
+            ars_prompt = await get_ars_system_prompt_by_user(db, current_user.user_id)
+            if ars_prompt:
+                system_prompt = ars_prompt.prompt
+                default_logger.info(f"Using ARS system prompt for user {current_user.user_id}")
+        
         # Process message through chat service
         response = await chat_service.process_message(
             message=chat_message.message,
             session_id=chat_message.session_id,
-            system_prompt=chat_message.system_prompt
+            system_prompt=system_prompt
         )
         
-        return ChatResponse(
-            response=response["response"],
-            source_documents=[{"content": doc.get("content"), "metadata": doc.get("metadata")} for doc in response.get("source_documents", [])] if response.get("source_documents") else [],
-            session_id=response["session_id"]
-        )
+        return ChatResponse(**response)
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/stream")
-async def stream_message(chat_message: ChatMessage):
+async def stream_message(
+    chat_message: ChatMessage,
+    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)]
+):
     """Stream a chatbot response"""
     # Debug logging
     default_logger.info(f"Received stream request: message='{chat_message.message}', session_id='{chat_message.session_id}'")
+    
+    # Get ARS system prompt from database if not provided and user is authenticated
+    system_prompt = chat_message.system_prompt
+    default_logger.info(f"[ARS DEBUG] stream - current_user: {current_user}, system_prompt from request: {system_prompt}")
+    if not system_prompt and current_user:
+        default_logger.info(f"[ARS DEBUG] Fetching ARS prompt for user {current_user.user_id}")
+        ars_prompt = await get_ars_system_prompt_by_user(db, current_user.user_id)
+        default_logger.info(f"[ARS DEBUG] ARS prompt fetched: {ars_prompt}")
+        if ars_prompt:
+            system_prompt = ars_prompt.prompt
+            default_logger.info(f"[ARS DEBUG] Using ARS system prompt for user {current_user.user_id} in stream")
+            default_logger.info(f"[ARS DEBUG] System prompt length: {len(system_prompt)} chars")
+        else:
+            default_logger.info(f"[ARS DEBUG] No ARS prompt found for user {current_user.user_id}")
+    else:
+        default_logger.info(f"[ARS DEBUG] Skipping ARS prompt fetch - system_prompt: {bool(system_prompt)}, current_user: {bool(current_user)}")
     
     async def generate():
         async for chunk in chat_service.stream_message(
             message=chat_message.message,
             session_id=chat_message.session_id,
-            system_prompt=chat_message.system_prompt
+            system_prompt=system_prompt
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
     

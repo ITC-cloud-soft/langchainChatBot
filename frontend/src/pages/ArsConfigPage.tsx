@@ -288,6 +288,57 @@ const ArsConfigPage: React.FC = () => {
               </Button>
             </Box>
           </Paper>
+
+          {/* システムプロンプト表示エリア */}
+          <Paper elevation={3} sx={{ p: 3, mt: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              システムプロンプト
+            </Typography>
+            
+            {systemPrompt ? (
+              <Box>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={12}
+                  value={systemPrompt}
+                  InputProps={{
+                    readOnly: true,
+                  }}
+                  sx={{ 
+                    mb: 2,
+                    '& .MuiInputBase-input': {
+                      fontSize: '0.95rem',
+                      lineHeight: 1.6,
+                      fontFamily: 'monospace'
+                    }
+                  }}
+                />
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="caption" color="text.secondary">
+                    最終更新: {lastUpdated ? new Date(lastUpdated).toLocaleString('ja-JP') : '不明'}
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<RefreshIcon />}
+                    onClick={handleUpdatePrompt}
+                    disabled={isTesting}
+                  >
+                    更新
+                  </Button>
+                </Box>
+              </Box>
+            ) : (
+              <Alert severity="info">
+                <Typography variant="body2">
+                  システムプロンプトはまだ取得されていません。
+                  <br />
+                  APIキーを保存後、「プロンプト更新」ボタンをクリックして取得してください。
+                </Typography>
+              </Alert>
+            )}
+          </Paper>
         </Grid>
 
         <Grid item xs={12} md={4}>
@@ -307,41 +358,19 @@ const ArsConfigPage: React.FC = () => {
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   <strong>タイムアウト:</strong> {config.timeout}秒
                 </Typography>
-                <Typography variant="body2">
+                <Typography variant="body2" sx={{ mb: 1 }}>
                   <strong>リトライ回数:</strong> {config.retryCount}回
                 </Typography>
-              </Box>
-
-              <Divider sx={{ my: 2 }} />
-
-              <Typography variant="subtitle2" gutterBottom>
-                システムプロンプト
-              </Typography>
-              {systemPrompt ? (
-                <Box>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={6}
-                    value={systemPrompt}
-                    InputProps={{
-                      readOnly: true,
-                    }}
-                    sx={{ mb: 1, fontSize: '0.875rem' }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    最終更新: {lastUpdated ? new Date(lastUpdated).toLocaleString('ja-JP') : '不明'}
-                  </Typography>
-                </Box>
-              ) : (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  <Typography variant="body2">
-                    システムプロンプトはまだ取得されていません。
+                {systemPrompt && (
+                  <Typography variant="body2" sx={{ mt: 2 }}>
+                    <strong>プロンプト状態:</strong> 取得済み ✓
                     <br />
-                    APIキーを保存後、30分以内に自動的に取得されます。
+                    <Typography variant="caption" color="text.secondary">
+                      更新: {lastUpdated ? new Date(lastUpdated).toLocaleString('ja-JP') : '不明'}
+                    </Typography>
                   </Typography>
-                </Alert>
-              )}
+                )}
+              </Box>
 
               <Divider sx={{ my: 2 }} />
 

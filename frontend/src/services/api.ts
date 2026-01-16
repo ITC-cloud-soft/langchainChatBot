@@ -212,8 +212,8 @@ export const chatApi = {
       headers: {
         'Content-Type': 'application/json',
         // Add auth token if available
-        ...(localStorage.getItem('auth_token')
-          ? { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+        ...(localStorage.getItem('access_token')
+          ? { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
           : {}),
       },
       body: JSON.stringify({

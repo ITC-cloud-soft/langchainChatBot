@@ -209,8 +209,10 @@ class ChatService(BaseService):
         if include_prompt:
             # カスタムシステムプロンプトが指定されている場合はそれを使用
             if system_prompt:
+                # システムプロンプト内の波括弧をエスケープ（PromptTemplateが変数として解釈しないように）
+                escaped_system_prompt = system_prompt.replace("{", "{{").replace("}", "}}")
                 # システムプロンプトを既存のテンプレートに統合
-                custom_template = f"{system_prompt}\n\n{self._get_prompt_template()}"
+                custom_template = f"{escaped_system_prompt}\n\n{self._get_prompt_template()}"
                 prompt = PromptTemplate(
                     template=custom_template,
                     input_variables=["chat_history", "context", "question"]

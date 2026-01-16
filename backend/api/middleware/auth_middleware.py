@@ -9,7 +9,7 @@ This module provides FastAPI dependencies for:
 """
 
 from typing import Optional, Annotated
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, status, Request, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,6 +145,88 @@ async def get_current_user(
     
     logger.info(f"[Auth] CurrentUser created: role={current_user.role}, is_admin={current_user.is_admin()}")
     return current_user
+
+
+async def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: AsyncSession = Depends(get_db_session)
+) -> Optional[CurrentUser]:
+    """
+    Get current user if authenticated, otherwise return None
+    
+    This is useful for endpoints that should work for both authenticated
+    and unauthenticated users, but may provide enhanced features for
+    authenticated users.
+    
+    Args:
+        credentials: Optional HTTP Bearer credentials
+        db: Database session
+        
+    Returns:
+        CurrentUser object if authenticated, None otherwise
+    """
+    import logging
+    logger = logging.getLogger("chatbot_app")
+    
+    logger.info(f"[AUTH DEBUG] get_optional_current_user - credentials: {credentials}")
+    
+    if not credentials:
+        logger.info("[AUTH DEBUG] No credentials provided")
+        return None
+    
+    try:
+        # Extract token from credentials
+        token = credentials.credentials
+        logger.info(f"[AUTH DEBUG] Token extracted: {token[:20]}...")
+        
+        # Decode token
+        try:
+            payload = TokenManager.decode_token(token)
+            logger.info(f"[AUTH DEBUG] Token decoded successfully")
+        except Exception as e:
+            logger.info(f"[AUTH DEBUG] Token decode failed: {e}")
+            return None
+        
+        # Extract user info from token
+        user_id: Optional[int] = None
+        try:
+            user_id = int(payload.get("sub"))
+        except (TypeError, ValueError):
+            logger.info("[AUTH DEBUG] Invalid token payload - cannot extract user_id")
+            return None
+        
+        role: str = payload.get("role")
+        
+        if not user_id or not role:
+            logger.info("[AUTH DEBUG] Invalid token payload - missing user_id or role")
+            return None
+        
+        # Fetch user from database
+        user = await get_user_by_id(db, user_id)
+        if not user:
+            logger.info(f"[AUTH DEBUG] User {user_id} not found in database")
+            return None
+        
+        if not user.is_active:
+            logger.info(f"[AUTH DEBUG] User {user_id} is not active")
+            return None
+        
+        # Create CurrentUser object
+        role_value = role
+        current_user = CurrentUser(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            role=role_value,
+            full_name=user.full_name
+        )
+        
+        logger.info(f"[AUTH DEBUG] User authenticated: {current_user.username}, role={current_user.role}")
+        return current_user
+        
+    except Exception as e:
+        logger.error(f"[AUTH DEBUG] Unexpected error: {e}")
+        return None
 
 
 async def get_current_active_user(

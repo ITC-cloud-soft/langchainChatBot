@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from api.core.config_manager import settings, config_manager
 from api.core.utils import handle_exceptions, default_logger, format_success_response
-from api.middleware import CurrentUser, get_current_admin_user, get_current_active_user, get_optional_user
+from api.middleware import CurrentUser, get_current_admin_user, get_current_active_user, get_optional_current_user
 
 # Create router
 router = APIRouter()
@@ -241,7 +241,7 @@ async def get_models_from_api(api_base: str, api_key: str = "") -> List[str]:
 
 @router.get("/config", response_model=LLMConfigResponse)
 async def get_llm_config(
-    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_user)] = None
+    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_current_user)] = None
 ):
     """Get current LLM configuration (Optional authentication)"""
     # Get current configuration from config manager
@@ -395,7 +395,7 @@ async def test_llm_config(
 
 @router.get("/models", response_model=List[str])
 async def get_available_models(
-    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_user)] = None
+    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_current_user)] = None
 ):
     """Get list of available models (Authenticated users)"""
     try:
