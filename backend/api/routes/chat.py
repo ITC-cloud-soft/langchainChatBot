@@ -137,6 +137,8 @@ async def stream_message(
     
     # Get ARS system prompt from database if not provided and user is authenticated
     system_prompt = chat_message.system_prompt
+    ars_token = None
+    
     default_logger.info(f"[ARS DEBUG] stream - current_user: {current_user}, system_prompt from request: {system_prompt}")
     if not system_prompt and current_user:
         default_logger.info(f"[ARS DEBUG] Fetching ARS prompt for user {current_user.user_id}")
@@ -151,11 +153,20 @@ async def stream_message(
     else:
         default_logger.info(f"[ARS DEBUG] Skipping ARS prompt fetch - system_prompt: {bool(system_prompt)}, current_user: {bool(current_user)}")
     
+    # Get ARS token for flow execution
+    if current_user:
+        from api.models.user import get_ars_token_by_user
+        ars_token_obj = await get_ars_token_by_user(db, current_user.user_id)
+        if ars_token_obj:
+            ars_token = ars_token_obj.token
+            default_logger.info(f"[ARS DEBUG] ARS token retrieved for user {current_user.user_id}")
+    
     async def generate():
         async for chunk in chat_service.stream_message(
             message=chat_message.message,
             session_id=chat_message.session_id,
-            system_prompt=system_prompt
+            system_prompt=system_prompt,
+            ars_token=ars_token
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
     

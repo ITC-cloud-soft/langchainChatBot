@@ -471,7 +471,8 @@ class ChatService(BaseService):
         self,
         message: str,
         session_id: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        ars_token: Optional[str] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream a chat response"""
         self.ensure_initialized()
@@ -579,6 +580,35 @@ class ChatService(BaseService):
                 tokens = callback.get_tokens()
                 full_response = "".join(tokens)
                 self.log_info(f"Generated {len(tokens)} tokens, response: {full_response[:100]}...")
+                
+                # ReAct解析: 检测JSON格式的flow调用并执行
+                if ars_token and full_response:
+                    import re
+                    
+                    # 检测JSON格式: {"id": "X", "type": "flow", "name": "..."}
+                    # 只处理type为flow的情况,忽略tool类型
+                    pattern = r'\{\s*"id"\s*:\s*"?(\d+)"?\s*,\s*"type"\s*:\s*"flow"'
+                    match = re.search(pattern, full_response)
+                    
+                    if match:
+                        flow_id = match.group(1)
+                        self.log_info(f"[ARS REACT] Detected flow ID {flow_id}")
+                        
+                        try:
+                            from api.tools.ars_tools import ExecuteFlowTool
+                            tool = ExecuteFlowTool(ars_token=ars_token)
+                            result_str = await tool._arun(flow_id=flow_id)
+                            result = json.loads(result_str)
+                            
+                            if result.get("success"):
+                                full_response = f"✅ Flow {flow_id} 実行成功!\n\n実行結果:\n{json.dumps(result.get('result'), ensure_ascii=False, indent=2)}"
+                            else:
+                                full_response = f"❌ Flow {flow_id} 実行失敗: {result.get('error')}"
+                            
+                            self.log_info(f"[ARS REACT] Flow execution completed, updated response")
+                        except Exception as e:
+                            self.log_error(f"[ARS REACT] Error executing flow {flow_id}", e)
+                            full_response = f"❌ Flow {flow_id} 実行中にエラーが発生しました: {str(e)}"
                 
                 if full_response:
                     # トークンを1文字ずつストリーミング
