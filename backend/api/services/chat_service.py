@@ -581,7 +581,7 @@ class ChatService(BaseService):
                 full_response = "".join(tokens)
                 self.log_info(f"Generated {len(tokens)} tokens, response: {full_response[:100]}...")
                 
-                # ReAct解析: 检测JSON格式的flow调用并执行
+                # ReAct解析: 检测JSON格式的flow调用,返回参数表单
                 if ars_token and full_response:
                     import re
                     
@@ -592,23 +592,77 @@ class ChatService(BaseService):
                     
                     if match:
                         flow_id = match.group(1)
-                        self.log_info(f"[ARS REACT] Detected flow ID {flow_id}")
+                        self.log_info(f"[ARS REACT] Detected flow ID {flow_id}, fetching params")
                         
                         try:
-                            from api.tools.ars_tools import ExecuteFlowTool
-                            tool = ExecuteFlowTool(ars_token=ars_token)
-                            result_str = await tool._arun(flow_id=flow_id)
-                            result = json.loads(result_str)
+                            # 获取Flow的参数定义
+                            from api.services.providers.ars_provider import ARSServiceProvider
+                            from api.core.config_manager import ConfigManager
                             
-                            if result.get("success"):
-                                full_response = f"✅ Flow {flow_id} 実行成功!\n\n実行結果:\n{json.dumps(result.get('result'), ensure_ascii=False, indent=2)}"
+                            config_manager = ConfigManager()
+                            ars_endpoint = config_manager.get_env("ARS_API_ENDPOINT", "http://localhost:5001")
+                            provider = ARSServiceProvider(api_endpoint=ars_endpoint)
+                            provider.set_api_key(ars_token)
+                            
+                            context = {"ars_token": ars_token}
+                            
+                            # 获取Flow名称
+                            flows = await provider.get_tools(context)
+                            flow_name = None
+                            for flow in flows:
+                                if str(flow.get("id")) == str(flow_id):
+                                    flow_name = flow.get("name")
+                                    break
+                            
+                            # 获取参数定义
+                            params_result = await provider.get_flow_params(flow_id, context)
+                            
+                            if params_result.get("success"):
+                                params = params_result.get("params", [])
+                                
+                                if params:
+                                    # 有参数需要填写,返回表单
+                                    full_response = f"📋 **{flow_name or f'Flow {flow_id}'}** を実行します\n\n"
+                                    full_response += "以下のパラメータを入力してください:\n\n"
+                                    
+                                    for param in params:
+                                        param_name = param.get("api_param_name")
+                                        param_type = param.get("param_type")
+                                        
+                                        full_response += f"- **{param_name}** ({param_type})"
+                                        
+                                        # オプション型の場合、選択肢を表示
+                                        if param_type == "option" and param.get("option"):
+                                            full_response += "\n  選択肢:\n"
+                                            for opt in param["option"]:
+                                                full_response += f"  - {opt['option_label']} ({opt['option_value']})\n"
+                                        else:
+                                            full_response += "\n"
+                                    
+                                    # メタデータとして flow_id と params を埋め込む
+                                    full_response += f"\n---\n**Flow ID**: {flow_id}\n"
+                                    full_response += "パラメータを入力後、再度送信してください。"
+                                    
+                                    self.log_info(f"[ARS REACT] Returned param form for flow {flow_id}")
+                                else:
+                                    # パラメータ不要、直接実行
+                                    from api.tools.ars_tools import ExecuteFlowTool
+                                    tool = ExecuteFlowTool(ars_token=ars_token)
+                                    result_str = await tool._arun(flow_id=flow_id)
+                                    result = json.loads(result_str)
+                                    
+                                    if result.get("success"):
+                                        full_response = f"✅ **{flow_name or f'Flow {flow_id}'}** 実行成功!\n\n実行結果:\n```json\n{json.dumps(result.get('result'), ensure_ascii=False, indent=2)}\n```"
+                                    else:
+                                        full_response = f"❌ **{flow_name or f'Flow {flow_id}'}** 実行失敗: {result.get('error')}"
+                                    
+                                    self.log_info(f"[ARS REACT] Flow {flow_id} executed (no params required)")
                             else:
-                                full_response = f"❌ Flow {flow_id} 実行失敗: {result.get('error')}"
+                                full_response = f"❌ Flow {flow_id} のパラメータ取得に失敗しました: {params_result.get('error')}"
                             
-                            self.log_info(f"[ARS REACT] Flow execution completed, updated response")
                         except Exception as e:
-                            self.log_error(f"[ARS REACT] Error executing flow {flow_id}", e)
-                            full_response = f"❌ Flow {flow_id} 実行中にエラーが発生しました: {str(e)}"
+                            self.log_error(f"[ARS REACT] Error processing flow {flow_id}", e)
+                            full_response = f"❌ Flow {flow_id} の処理中にエラーが発生しました: {str(e)}"
                 
                 if full_response:
                     # トークンを1文字ずつストリーミング
