@@ -168,7 +168,15 @@ async def stream_message(
             system_prompt=system_prompt,
             ars_token=ars_token
         ):
-            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            try:
+                # JSONシリアライズ時に適切なエンコーディングを保証
+                json_str = json.dumps(chunk, ensure_ascii=False, separators=(',', ':'))
+                yield f"data: {json_str}\n\n"
+            except Exception as e:
+                default_logger.error(f"JSON serialization error: {str(e)}, chunk: {chunk}")
+                # エラー時はエラーメッセージを返す
+                error_chunk = {"type": "error", "error": str(e)}
+                yield f"data: {json.dumps(error_chunk)}\n\n"
     
     return StreamingResponse(
         generate(),

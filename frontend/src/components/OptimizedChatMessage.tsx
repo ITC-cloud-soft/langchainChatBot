@@ -210,9 +210,12 @@ const OptimizedChatMessage: React.FC<OptimizedChatMessageProps> = memo(({ messag
           elevation={0}
           sx={{
             p: { xs: 1.5, sm: 2.5 },
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            backgroundColor: '#ffffff',
             borderRadius: '20px 20px 6px 20px',
-            backdropFilter: 'blur(10px)',
+            border: '2px solid transparent',
+            backgroundImage: 'linear-gradient(white, white), linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            backgroundOrigin: 'border-box',
+            backgroundClip: 'padding-box, border-box',
             boxShadow: '0 8px 32px rgba(102, 126, 234, 0.3)',
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             position: 'relative',
@@ -250,6 +253,7 @@ const OptimizedChatMessage: React.FC<OptimizedChatMessageProps> = memo(({ messag
             component="div"
             sx={{
               lineHeight: 1.6,
+              color: '#000000',
               '& p': { 
                 margin: 0,
               },
