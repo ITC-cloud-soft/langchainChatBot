@@ -6,12 +6,13 @@ import React, { useState, useEffect } from 'react';
 import { Box, Typography, Alert } from '@mui/material';
 import ReactMarkdown from 'react-markdown';
 import { ARSFlowForm } from './ARSFlowForm';
+import { FlowResultDisplay } from './FlowResultDisplay';
 import { 
   isFlowParamMessage, 
   parseFlowParamMessage,
   FlowFormData 
 } from '../utils/arsFormConverter';
-import { executeFlow } from '../services/arsFlowService';
+import { isFlowResultMessage, parseFlowResultMessage } from '../utils/flowResultParser';
 
 interface ChatMessageWithFormProps {
   content: string;
@@ -37,28 +38,35 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
         setFlowData(parsed);
       }
     }
+    
+    // メッセージがFlow実行結果かチェック
+    if (role === 'assistant' && isFlowResultMessage(content)) {
+      const parsed = parseFlowResultMessage(content);
+      if (parsed.isFlowResult) {
+        setExecutionResult(parsed);
+      }
+    }
   }, [content, role]);
 
   const handleFlowSubmit = async (flowId: string, values: Record<string, any>) => {
     try {
-      const result = await executeFlow(flowId, values);
+      // 特殊フォーマット: EXECUTE_FLOW:flow_id:params_json
+      const paramsJson = JSON.stringify(values);
+      const message = `EXECUTE_FLOW:${flowId}:${paramsJson}`;
       
-      if (result.success) {
-        setExecutionResult(result.result);
-        setShowForm(false);
-        setExecutionError(null);
-        
-        // 親コンポーネントに通知
-        if (onFlowExecuted) {
-          onFlowExecuted(result);
-        }
-      } else {
-        setExecutionError(result.error || 'Flow実行に失敗しました');
+      // 親コンポーネントに通知（メッセージ送信をトリガー）
+      if (onFlowExecuted) {
+        onFlowExecuted({
+          type: 'send_message',
+          message
+        });
       }
+      
+      // フォームは表示したまま（ユーザーの入力を保持）
     } catch (error) {
-      console.error('Flow execution error:', error);
+      console.error('Flow submission error:', error);
       setExecutionError(
-        error instanceof Error ? error.message : 'Flow実行中にエラーが発生しました'
+        error instanceof Error ? error.message : 'パラメータ送信中にエラーが発生しました'
       );
     }
   };
@@ -82,29 +90,15 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
     );
   }
 
-  // Flow実行結果の表示
-  if (flowData && !showForm && executionResult) {
+  // Flow実行結果の表示（新しいFlowResultDisplayコンポーネントを使用）
+  if (executionResult && executionResult.isFlowResult) {
     return (
-      <Box sx={{ mb: 2 }}>
-        <Alert severity="success" sx={{ mb: 1 }}>
-          ✅ <strong>{flowData.flowName}</strong> 実行成功!
-        </Alert>
-        <Box
-          sx={{
-            backgroundColor: '#f5f5f5',
-            borderRadius: 1,
-            p: 2,
-            fontFamily: 'monospace',
-            fontSize: '0.875rem',
-            overflow: 'auto',
-            maxHeight: 400,
-          }}
-        >
-          <Typography variant="body2" component="pre" sx={{ m: 0 }}>
-            {JSON.stringify(executionResult, null, 2)}
-          </Typography>
-        </Box>
-      </Box>
+      <FlowResultDisplay
+        flowId={executionResult.flowId || ''}
+        success={executionResult.success || false}
+        resultData={executionResult.resultData}
+        error={executionResult.error}
+      />
     );
   }
 

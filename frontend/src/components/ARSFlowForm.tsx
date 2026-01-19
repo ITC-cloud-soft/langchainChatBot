@@ -26,6 +26,8 @@ interface ARSFlowFormProps {
   params: ARSParam[];
   onSubmit: (flowId: string, values: Record<string, any>) => Promise<void>;
   onCancel?: () => void;
+  readonly?: boolean;
+  initialValues?: Record<string, any>;
 }
 
 export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
@@ -34,11 +36,14 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
   params,
   onSubmit,
   onCancel,
+  readonly = false,
+  initialValues = {},
 }) => {
-  const [formValues, setFormValues] = useState<Record<string, any>>({});
+  const [formValues, setFormValues] = useState<Record<string, any>>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(readonly);
 
   const handleChange = (paramName: string, value: any) => {
     setFormValues(prev => ({
@@ -81,6 +86,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
     
     try {
       await onSubmit(flowId, formValues);
+      setSubmitted(true); // 提交成功後、フォームを読み取り専用にする
     } catch (error) {
       console.error('Flow execution error:', error);
       setSubmitError(
@@ -107,9 +113,12 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
             onChange={(e) => handleChange(api_param_name, e.target.value)}
             error={!!error}
             helperText={error}
-            disabled={submitting}
+            disabled={submitted || submitting}
             variant="outlined"
             size="small"
+            InputProps={{
+              readOnly: submitted,
+            }}
           />
         );
 
@@ -124,9 +133,12 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
             onChange={(e) => handleChange(api_param_name, e.target.value)}
             error={!!error}
             helperText={error}
-            disabled={submitting}
+            disabled={submitted || submitting}
             variant="outlined"
             size="small"
+            InputProps={{
+              readOnly: submitted,
+            }}
           />
         );
 
@@ -136,7 +148,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
             key={api_param_name}
             fullWidth
             error={!!error}
-            disabled={submitting}
+            disabled={submitted || submitting}
             size="small"
           >
             <InputLabel>{api_param_name}</InputLabel>
@@ -222,30 +234,40 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
           {params.map(param => renderField(param))}
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 1, mt: 3 }}>
-          <Button
-            type="submit"
-            variant="contained"
-            color="primary"
-            fullWidth
-            disabled={submitting}
-            startIcon={submitting ? <CircularProgress size={20} /> : null}
-          >
-            {submitting ? '実行中...' : '実行'}
-          </Button>
+        {submitted && (
+          <Alert severity="success" sx={{ mt: 2 }}>
+            ✅ パラメータが送信されました。実行結果をお待ちください...
+          </Alert>
+        )}
+
+        {!submitted && (
+          <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              size="small"
+              disabled={submitting}
+              startIcon={submitting ? <CircularProgress size={16} /> : null}
+              sx={{ flex: 1, py: 0.75 }}
+            >
+              {submitting ? '実行中...' : '実行'}
+            </Button>
           
           {onCancel && (
             <Button
               variant="outlined"
               color="secondary"
+              size="small"
               onClick={onCancel}
               disabled={submitting}
-              sx={{ minWidth: 100 }}
+              sx={{ minWidth: 80, py: 0.75 }}
             >
               キャンセル
             </Button>
           )}
-        </Box>
+          </Box>
+        )}
 
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
           Flow ID: {flowId}

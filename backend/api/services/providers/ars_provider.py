@@ -68,7 +68,7 @@ class ARSServiceProvider(ServiceProvider):
         
         # ARSからFlowsを取得
         try:
-            url = f"{self.api_endpoint}/get_status"
+            url = f"{self.api_endpoint}/status"
             headers = {"X-API-Key": api_key}
             
             logger.info(f"[ARS Provider] Fetching flows from {url}")

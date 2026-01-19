@@ -585,22 +585,82 @@ class ChatService(BaseService):
                 if ars_token and full_response:
                     import re
                     
-                    # 检测JSON格式: {"id": "X", "type": "flow", "name": "..."}
-                    # 只处理type为flow的情况,忽略tool类型
-                    pattern = r'\{\s*"id"\s*:\s*"?(\d+)"?\s*,\s*"type"\s*:\s*"flow"'
-                    match = re.search(pattern, full_response)
+                    # 首先检查用户是否提交了Flow参数 (格式: EXECUTE_FLOW:flow_id:params_json)
+                    param_submit_pattern = r'EXECUTE_FLOW:(\d+):(.+)'
+                    param_match = re.search(param_submit_pattern, message)
                     
-                    if match:
+                    if param_match:
+                        # 用户提交了参数,直接执行Flow
+                        flow_id = param_match.group(1)
+                        params_json = param_match.group(2)
+                        
+                        try:
+                            params = json.loads(params_json)
+                            self.log_info(f"[ARS REACT] User submitted params for flow {flow_id}: {params}")
+                            
+                            from api.tools.ars_tools import ExecuteFlowTool
+                            tool = ExecuteFlowTool(ars_token=ars_token)
+                            result_str = await tool._arun(flow_id=flow_id, parameters=params)
+                            result = json.loads(result_str)
+                            
+                            if result.get("success"):
+                                # 格式化执行结果
+                                result_data = result.get('result', {})
+                                result_data_obj = result_data.get('result_data', {})
+                                
+                                # 构建美观的结果显示
+                                formatted_result = f"✅ **Flow {flow_id} 実行成功!**\n\n"
+                                
+                                # 遍历result_data中的每个flow步骤
+                                for flow_name, steps in result_data_obj.items():
+                                    formatted_result += f"### 📋 {flow_name}\n\n"
+                                    
+                                    if isinstance(steps, list):
+                                        for idx, step in enumerate(steps, 1):
+                                            for step_name, step_data in step.items():
+                                                status = step_data.get('result', 'unknown')
+                                                
+                                                if status == 'success':
+                                                    formatted_result += f"**ステップ {idx}: {step_name}** ✅\n"
+                                                    if 'data' in step_data:
+                                                        formatted_result += f"- WorkID: `{step_data['data'].get('WorkID', 'N/A')}`\n"
+                                                        formatted_result += f"- FK_Node: `{step_data['data'].get('FK_Node', 'N/A')}`\n"
+                                                elif status == 'error':
+                                                    formatted_result += f"**ステップ {idx}: {step_name}** ❌\n"
+                                                    formatted_result += f"- エラーコード: `{step_data.get('msgcode', 'N/A')}`\n"
+                                                    formatted_result += f"- エラーメッセージ: {step_data.get('messages', 'Unknown error')}\n"
+                                                
+                                                if 'ts' in step_data:
+                                                    formatted_result += f"- 実行時刻: {step_data['ts']}\n"
+                                                formatted_result += "\n"
+                                
+                                # 添加原始数据的折叠部分
+                                formatted_result += "\n<details>\n<summary>📊 詳細データを表示</summary>\n\n"
+                                formatted_result += f"```json\n{json.dumps(result_data, ensure_ascii=False, indent=2)}\n```\n"
+                                formatted_result += "</details>"
+                                
+                                full_response = formatted_result
+                            else:
+                                full_response = f"❌ **Flow {flow_id}** 実行失敗: {result.get('error')}"
+                        except Exception as e:
+                            self.log_error(f"[ARS REACT] Error executing flow with params", e)
+                            full_response = f"❌ パラメータ処理エラー: {str(e)}"
+                    else:
+                        # 检测JSON格式: {"id": "X", "type": "flow", "name": "..."}
+                        # 只处理type为flow的情况,忽略tool类型
+                        pattern = r'\{\s*"id"\s*:\s*"?(\d+)"?\s*,\s*"type"\s*:\s*"flow"'
+                        match = re.search(pattern, full_response)
+                    
+                    if not param_match and match:
                         flow_id = match.group(1)
                         self.log_info(f"[ARS REACT] Detected flow ID {flow_id}, fetching params")
                         
                         try:
                             # 获取Flow的参数定义
                             from api.services.providers.ars_provider import ARSServiceProvider
-                            from api.core.config_manager import ConfigManager
+                            import os
                             
-                            config_manager = ConfigManager()
-                            ars_endpoint = config_manager.get_env("ARS_API_ENDPOINT", "http://localhost:5001")
+                            ars_endpoint = os.getenv("ARS_API_ENDPOINT", "http://ars-backend:5001")
                             provider = ARSServiceProvider(api_endpoint=ars_endpoint)
                             provider.set_api_key(ars_token)
                             

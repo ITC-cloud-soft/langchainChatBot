@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { Box, Container, Paper } from '@mui/material';
 import { ChatMessageWithForm } from '../ChatMessageWithForm';
+import { ARSFlowForm } from '../ARSFlowForm';
 
 interface Message {
   id: string;

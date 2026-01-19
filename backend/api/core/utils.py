@@ -94,6 +94,7 @@ def setup_logging(
     
     logger = logging.getLogger(name)
     logger.setLevel(level)
+    logger.propagate = False  # 防止日志传播到父logger导致重复输出
     
     # ハンドラーが既に存在する場合は追加しない
     if not logger.handlers:

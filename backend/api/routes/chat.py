@@ -168,7 +168,7 @@ async def stream_message(
             system_prompt=system_prompt,
             ars_token=ars_token
         ):
-            yield f"data: {json.dumps(chunk)}\n\n"
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
     
     return StreamingResponse(
         generate(),

@@ -180,6 +180,31 @@ const ChatPage: React.FC = () => {
     }
   }, [inputMessage, sendStreamingMessage, clearInputMessage, setInputMessage]);
 
+  // 直接メッセージを送信する関数（入力ボックスを経由しない）
+  const handleSendDirectMessage = useCallback(async (message: string, options?: { silent?: boolean }) => {
+    if (!message?.trim()) return;
+
+    console.log('Sending direct message:', message);
+
+    try {
+      // EXECUTE_FLOW メッセージの場合は、ユーザーメッセージを履歴に追加しない
+      const isExecuteFlow = message.startsWith('EXECUTE_FLOW:');
+      
+      if (isExecuteFlow && options?.silent !== false) {
+        // サイレントモード: ユーザーメッセージを表示せずに送信
+        // バックエンドに送信するが、チャット履歴には追加しない
+        await sendStreamingMessage(message);
+      } else {
+        // 通常モード: メッセージを送信
+        await sendStreamingMessage(message);
+      }
+      
+      console.log('Direct message sent successfully');
+    } catch (error) {
+      console.error('Error sending direct message:', error);
+    }
+  }, [sendStreamingMessage]);
+
   // セッション検索処理
   const handleSearchLocal = useCallback(async () => {
     if (!searchQuery?.trim()) return;
@@ -245,6 +270,7 @@ const ChatPage: React.FC = () => {
             selectedSession={selectedSession}
             useVirtualization={useVirtualization}
             estimatedItemSize={estimatedItemSize}
+            onSendMessage={handleSendDirectMessage}
           />
         }
         input={
