@@ -3,7 +3,7 @@
  * MUI (Material-UI)ベース
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   TextField,
@@ -45,8 +45,29 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   
+  // initialValuesが変更されたらformValuesを更新
+  useEffect(() => {
+    console.log('[ARSFlowForm] initialValues changed:', {
+      initialValues,
+      hasValues: initialValues && Object.keys(initialValues).length > 0
+    });
+    if (initialValues && Object.keys(initialValues).length > 0) {
+      setFormValues(initialValues);
+    }
+  }, [initialValues]);
+  
   const isEditable = formStatus === 'pending';
   const isReadonly = !isEditable;
+  
+  console.log('[ARSFlowForm] Rendering:', {
+    flowId,
+    flowName,
+    paramsCount: params.length,
+    formStatus,
+    formValues,
+    isEditable,
+    isReadonly
+  });
 
   const handleChange = (paramName: string, value: any) => {
     if (!isEditable) return;

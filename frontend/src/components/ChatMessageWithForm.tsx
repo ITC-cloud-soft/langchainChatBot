@@ -42,15 +42,51 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
   const [localFormStatus, setLocalFormStatus] = useState<FormStatus | null>(null);
   const [localFormData, setLocalFormData] = useState<Record<string, any> | null>(null);
   
+  // metadataが変更されたら、ローカル状態をリセット（データベースの状態を優先）
+  useEffect(() => {
+    if (metadata?.form_status && metadata.form_status !== 'pending') {
+      setLocalFormStatus(null);
+      setLocalFormData(null);
+    }
+  }, [metadata?.form_status]);
+  
   // ローカル状態が設定されている場合はそれを使用、なければmetadataから取得
   const formStatus = localFormStatus || metadata?.form_status || 'pending';
   const savedFormData = localFormData || metadata?.form_data || {};
+  
+  console.log('[ChatMessageWithForm] Form data:', {
+    formStatus,
+    savedFormData,
+    savedFormData_json: JSON.stringify(savedFormData),
+    metadata_form_data: metadata?.form_data,
+    metadata_form_data_json: JSON.stringify(metadata?.form_data),
+    localFormData
+  });
 
   useEffect(() => {
-    // メッセージがFlow参数フォームかチェック
+    console.log('[ChatMessageWithForm] useEffect triggered', { 
+      messageId, 
+      metadata, 
+      form_status: metadata?.form_status,
+      content_preview: content.substring(0, 100)
+    });
+    
+    // metadataにparams定義がある場合は、それを使用
+    if (metadata?.params && metadata?.flow_id) {
+      console.log('[ChatMessageWithForm] Using params from metadata:', metadata.params);
+      setFlowData({
+        flowId: metadata.flow_id,
+        flowName: metadata.flow_name || `Flow ${metadata.flow_id}`,
+        params: metadata.params
+      });
+      return;
+    }
+    
+    // metadataにparamsがない場合は、contentから解析
     if (role === 'assistant' && isFlowParamMessage(content)) {
       const parsed = parseFlowParamMessage(content);
       if (parsed) {
+        console.log('[ChatMessageWithForm] Parsed params from content:', parsed);
         setFlowData(parsed);
       }
     }
@@ -62,18 +98,23 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
         setExecutionResult(parsed);
       }
     }
-  }, [content, role]);
+  }, [content, role, metadata]);
 
   const handleFlowSubmit = async (flowId: string, values: Record<string, any>) => {
     try {
+      console.log('[ChatMessageWithForm] handleFlowSubmit called', { flowId, messageId, values });
+      
       // 即座にローカル状態を更新してUIを反映
       setLocalFormStatus('submitted');
       setLocalFormData(values);
       
       // バックエンドAPIを呼び出してデータベースを更新
       if (messageId) {
+        console.log('[ChatMessageWithForm] Calling updateFormStatus API', { messageId });
         await updateFormStatus(messageId, 'submitted', values);
-        console.log('Form status updated to submitted in database');
+        console.log('[ChatMessageWithForm] Form status updated to submitted in database');
+      } else {
+        console.warn('[ChatMessageWithForm] No messageId provided, skipping database update');
       }
       
       const paramsJson = JSON.stringify(values);

@@ -735,7 +735,8 @@ class ChatService(BaseService):
                                     form_metadata = {
                                         "form_status": "pending",
                                         "flow_id": flow_id,
-                                        "flow_name": flow_name
+                                        "flow_name": flow_name,
+                                        "params": params  # パラメータ定義も保存
                                     }
                                     
                                     self.log_info(f"[ARS REACT] Returned param form for flow {flow_id}")
@@ -809,13 +810,14 @@ class ChatService(BaseService):
                     "metadata": form_metadata
                 }
                 
-                # Add bot response to history with message_id
+                # Add bot response to history with message_id and metadata
                 assistant_message_data = {
                     "role": "assistant",
                     "content": full_response,
                     "timestamp": datetime.now().isoformat(),
                     "source_documents": source_documents,
-                    "message_id": saved_message.get("message_id") if saved_message else None
+                    "message_id": saved_message.get("message_id") if saved_message else None,
+                    "metadata": form_metadata
                 }
                 self.chat_history[session_id].append(assistant_message_data)
                 
@@ -896,6 +898,11 @@ class ChatService(BaseService):
                         "content": msg["content"],
                         "timestamp": msg["timestamp"]
                     }
+                    # message_idとmetadataを含める（フォーム状態の復元に必要）
+                    if msg.get("message_id"):
+                        message_data["message_id"] = msg["message_id"]
+                    if msg.get("metadata"):
+                        message_data["metadata"] = msg["metadata"]
                     if msg.get("source_documents"):
                         message_data["source_documents"] = msg["source_documents"]
                     if msg.get("error_info"):

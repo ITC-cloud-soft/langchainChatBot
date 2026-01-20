@@ -113,7 +113,8 @@ interface SendMessageResponse {
 
 interface ChatHistoryResponse {
   session_id: string;
-  messages: ChatMessage[];
+  messages?: ChatMessage[];
+  history?: ChatMessage[];
   total: number;
 }
 

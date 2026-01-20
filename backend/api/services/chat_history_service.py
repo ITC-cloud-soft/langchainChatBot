@@ -154,6 +154,12 @@ class ChatHistoryService:
                 
                 # Get messages
                 messages = await get_chat_messages_async(db_session, session_id, limit, offset)
+                
+                # Log metadata for debugging
+                for msg in messages:
+                    if msg.message_metadata:
+                        self.logger.info(f"Message {msg.message_id} metadata: {msg.message_metadata}")
+                
                 message_list = [msg.to_dict() for msg in messages]
                 
                 # Get metadata

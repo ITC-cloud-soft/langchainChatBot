@@ -468,7 +468,8 @@ async def update_message_form_status_async(
     if message:
         logger.info(f"[DB UPDATE] Found message {message_id}, current metadata: {message.message_metadata}")
         
-        metadata = message.message_metadata or {}
+        # 既存のmetadataをコピーして新しいdictを作成（SQLAlchemyの変更検知のため）
+        metadata = dict(message.message_metadata or {})
         metadata['form_status'] = form_status
         
         if form_data is not None:
@@ -483,7 +484,11 @@ async def update_message_form_status_async(
             if execution_result:
                 metadata['execution_result'] = execution_result
         
+        # SQLAlchemyのJSON型フィールドの変更を明示的にマーク
+        from sqlalchemy.orm.attributes import flag_modified
         message.message_metadata = metadata
+        flag_modified(message, "message_metadata")
+        
         await db.commit()
         await db.refresh(message)
         

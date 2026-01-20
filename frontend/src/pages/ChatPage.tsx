@@ -262,8 +262,17 @@ const ChatPage: React.FC = () => {
       actions.setLoading(true);
       const response = await chatApi.getChatHistory(sessionId);
       
-      if (response.success && response.data.messages) {
-        const historyMessages = response.data.messages.map((msg: any) => ({
+      console.log('[ChatPage] API response:', response);
+      console.log('[ChatPage] response.data:', response.data);
+      
+      // APIは "history" フィールドでメッセージを返す
+      const messages = response.data.history || response.data.messages || [];
+      
+      console.log('[ChatPage] messages from API:', messages);
+      console.log('[ChatPage] First message:', messages[0]);
+      
+      if (response.success && messages.length > 0) {
+        const historyMessages = messages.map((msg: any) => ({
           id: msg.message_id || msg.id || `msg_${Date.now()}_${Math.random()}`,
           role: msg.role,
           content: msg.content,
@@ -275,6 +284,12 @@ const ChatPage: React.FC = () => {
         
         actions.setMessages(historyMessages);
         console.log('Loaded chat history:', historyMessages.length, 'messages');
+        console.log('Messages with metadata:', historyMessages.filter((m: any) => m.metadata).map((m: any) => ({
+          id: m.message_id,
+          role: m.role,
+          metadata: m.metadata
+        })));
+        console.log('Sample message structure:', historyMessages[0]);
       }
     } catch (error) {
       console.error('Failed to load chat history:', error);
