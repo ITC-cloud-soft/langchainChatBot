@@ -211,8 +211,28 @@ class ChatService(BaseService):
             if system_prompt:
                 # システムプロンプト内の波括弧をエスケープ（PromptTemplateが変数として解釈しないように）
                 escaped_system_prompt = system_prompt.replace("{", "{{").replace("}", "}}")
+                
+                # Flow実行リクエスト検出の追加指示を追加
+                flow_execution_instruction = """
+
+## 重要: Flow実行リクエストの応答形式
+
+ユーザーがFlowの実行をリクエストした場合（例: 「XXXを実行」「XXXを申請」など）、以下のJSON形式で**必ず**応答してください:
+
+{{"id": "FLOW_ID", "type": "flow", "name": "FLOW_NAME"}}
+
+例:
+- ユーザー: 「CCFLOWシステム申請--仕入計画を実行」
+- あなたの応答: {{"id": "5", "type": "flow", "name": "CCFLOWシステム申請--仕入計画"}}
+
+**注意事項:**
+1. Flow実行リクエストを検出したら、他の説明は一切せず、上記のJSON形式のみを返してください
+2. 必ず日本語で応答してください（中国語や英語は使用しないでください）
+3. JSON形式が正確であることを確認してください
+"""
+                
                 # システムプロンプトを既存のテンプレートに統合
-                custom_template = f"{escaped_system_prompt}\n\n{self._get_prompt_template()}"
+                custom_template = f"{escaped_system_prompt}{flow_execution_instruction}\n\n{self._get_prompt_template()}"
                 prompt = PromptTemplate(
                     template=custom_template,
                     input_variables=["chat_history", "context", "question"]
