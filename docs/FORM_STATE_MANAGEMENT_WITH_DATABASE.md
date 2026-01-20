@@ -663,7 +663,7 @@ docker-compose restart chatbot-frontend
 
 ---
 
-## 10. 参考資料
+## 8. 参考資料
 
 - [FLOW_EXECUTION_WITH_PARAMETERS.md](./FLOW_EXECUTION_WITH_PARAMETERS.md) - Flow実行の基本仕様
 - [TWO_STAGE_FLOW_EXECUTION.md](./TWO_STAGE_FLOW_EXECUTION.md) - 2段階実行の詳細
