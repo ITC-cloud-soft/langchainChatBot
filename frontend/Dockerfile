@@ -1,8 +1,14 @@
 # マルチステージビルドを使用した最適化されたDockerfile
 FROM node:20-alpine AS builder
 
+# ビルド引数の定義
+ARG VITE_API_URL=""
+ARG VITE_TEST_TIMEOUT=120000
+
 # 環境変数の設定
 ENV NODE_ENV=production
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_TEST_TIMEOUT=${VITE_TEST_TIMEOUT}
 
 # 作業ディレクトリの設定
 WORKDIR /app
