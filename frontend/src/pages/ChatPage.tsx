@@ -239,9 +239,49 @@ const ChatPage: React.FC = () => {
       }
     };
 
+    // sessionIdをlocalStorageから復元、なければ新規作成
+    const storedSessionId = localStorage.getItem('currentSessionId');
+    const currentSessionId = storedSessionId || `session_${Date.now()}`;
+    
+    if (!storedSessionId) {
+      localStorage.setItem('currentSessionId', currentSessionId);
+    }
+    
+    actions.setSessionId(currentSessionId);
     initializeSessions();
-    actions.setSessionId(`session_${Date.now()}`);
+    
+    // 既存のsessionIdの場合、履歴をロード
+    if (storedSessionId) {
+      loadChatHistory(storedSessionId);
+    }
   }, []);
+
+  // チャット履歴をロードする関数
+  const loadChatHistory = async (sessionId: string) => {
+    try {
+      actions.setLoading(true);
+      const response = await chatApi.getChatHistory(sessionId);
+      
+      if (response.success && response.data.messages) {
+        const historyMessages = response.data.messages.map((msg: any) => ({
+          id: msg.message_id || msg.id || `msg_${Date.now()}_${Math.random()}`,
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp,
+          message_id: msg.message_id,
+          metadata: msg.metadata,
+          sourceDocuments: msg.source_documents || msg.sourceDocuments,
+        }));
+        
+        actions.setMessages(historyMessages);
+        console.log('Loaded chat history:', historyMessages.length, 'messages');
+      }
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
+    } finally {
+      actions.setLoading(false);
+    }
+  };
 
   return (
     <Box
