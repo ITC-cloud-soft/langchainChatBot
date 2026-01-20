@@ -581,6 +581,9 @@ class ChatService(BaseService):
                 full_response = "".join(tokens)
                 self.log_info(f"Generated {len(tokens)} tokens, response: {full_response[:100]}...")
                 
+                # 表単メッセージのメタデータを初期化
+                form_metadata = None
+                
                 # ReAct解析: 检测JSON格式的flow调用,返回参数表单
                 if ars_token and full_response:
                     import re
@@ -598,6 +601,31 @@ class ChatService(BaseService):
                             params = json.loads(params_json)
                             self.log_info(f"[ARS REACT] User submitted params for flow {flow_id}: {params}")
                             
+                            # 更新表単状態为 'submitted'
+                            try:
+                                # 查找最近的assistant消息（表単消息）
+                                if session_id in self.chat_history:
+                                    messages = self.chat_history[session_id]
+                                    for msg in reversed(messages):
+                                        if msg.get("role") == "assistant" and msg.get("message_id"):
+                                            form_message_id = msg.get("message_id")
+                                            
+                                            from api.models.database import update_message_form_status_async
+                                            from api.core.database import database_manager
+                                            
+                                            async with database_manager.get_session() as db_session:
+                                                await update_message_form_status_async(
+                                                    db=db_session,
+                                                    message_id=form_message_id,
+                                                    form_status='submitted',
+                                                    form_data=params
+                                                )
+                                            self.log_info(f"Updated form status to 'submitted' for message {form_message_id}")
+                                            break
+                            except Exception as e:
+                                self.log_warning(f"Failed to update form status: {str(e)}")
+                            
+
                             from api.tools.ars_tools import ExecuteFlowTool
                             tool = ExecuteFlowTool(ars_token=ars_token)
                             result_str = await tool._arun(flow_id=flow_id, parameters=params)
@@ -703,6 +731,13 @@ class ChatService(BaseService):
                                     full_response += f"\n---\n**Flow ID**: {flow_id}\n"
                                     full_response += "パラメータを入力後、再度送信してください。"
                                     
+                                    # 表単メッセージのメタデータを設定（初期状態: pending）
+                                    form_metadata = {
+                                        "form_status": "pending",
+                                        "flow_id": flow_id,
+                                        "flow_name": flow_name
+                                    }
+                                    
                                     self.log_info(f"[ARS REACT] Returned param form for flow {flow_id}")
                                 else:
                                     # パラメータ不要、直接実行
@@ -746,34 +781,43 @@ class ChatService(BaseService):
                         }
                     full_response = fallback_response
                 
-                # Send final response with source documents
-                yield {
-                    "type": "final",
-                    "response": full_response,
-                    "source_documents": source_documents,
-                    "session_id": session_id
-                }
-                
-                # Add bot response to history
-                assistant_message_data = {
-                    "role": "assistant",
-                    "content": full_response,
-                    "timestamp": datetime.now().isoformat(),
-                    "source_documents": source_documents
-                }
-                self.chat_history[session_id].append(assistant_message_data)
-                
-                # Save assistant message to database
+                # Save assistant message to database first to get message_id
+                saved_message = None
                 try:
-                    await chat_history_service.add_message(
+                    # 表単メッセージの場合はmetadataを含める
+                    self.log_info(f"Saving assistant message with metadata: {form_metadata}")
+                    
+                    saved_message = await chat_history_service.add_message(
                         session_id=session_id,
                         role="assistant",
                         content=full_response,
                         message_type="text",
-                        source_documents=source_documents
+                        source_documents=source_documents,
+                        metadata=form_metadata
                     )
+                    self.log_info(f"Saved message with ID: {saved_message.get('message_id') if saved_message else 'None'}")
                 except Exception as e:
                     self.log_warning(f"Failed to save assistant message to database: {str(e)}")
+                
+                # Send final response with source documents and message_id
+                yield {
+                    "type": "final",
+                    "response": full_response,
+                    "source_documents": source_documents,
+                    "session_id": session_id,
+                    "message_id": saved_message.get("message_id") if saved_message else None,
+                    "metadata": form_metadata
+                }
+                
+                # Add bot response to history with message_id
+                assistant_message_data = {
+                    "role": "assistant",
+                    "content": full_response,
+                    "timestamp": datetime.now().isoformat(),
+                    "source_documents": source_documents,
+                    "message_id": saved_message.get("message_id") if saved_message else None
+                }
+                self.chat_history[session_id].append(assistant_message_data)
                 
                 # Update cache
                 self._update_history_cache(session_id)

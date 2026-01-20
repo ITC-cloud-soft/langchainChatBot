@@ -19,6 +19,7 @@ import {
   FormHelperText,
 } from '@mui/material';
 import { ARSParam } from '../utils/arsFormConverter';
+import { FormStatus } from '../services/formStatusService';
 
 interface ARSFlowFormProps {
   flowId: string;
@@ -26,7 +27,7 @@ interface ARSFlowFormProps {
   params: ARSParam[];
   onSubmit: (flowId: string, values: Record<string, any>) => Promise<void>;
   onCancel?: () => void;
-  readonly?: boolean;
+  formStatus?: FormStatus;
   initialValues?: Record<string, any>;
 }
 
@@ -36,22 +37,25 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
   params,
   onSubmit,
   onCancel,
-  readonly = false,
+  formStatus = 'pending',
   initialValues = {},
 }) => {
   const [formValues, setFormValues] = useState<Record<string, any>>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(readonly);
+  
+  const isEditable = formStatus === 'pending';
+  const isReadonly = !isEditable;
 
   const handleChange = (paramName: string, value: any) => {
+    if (!isEditable) return;
+    
     setFormValues(prev => ({
       ...prev,
       [paramName]: value,
     }));
     
-    // エラーをクリア
     if (errors[paramName]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -86,7 +90,6 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
     
     try {
       await onSubmit(flowId, formValues);
-      setSubmitted(true); // 提交成功後、フォームを読み取り専用にする
     } catch (error) {
       console.error('Flow execution error:', error);
       setSubmitError(
@@ -94,6 +97,12 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
       );
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCancelClick = () => {
+    if (onCancel) {
+      onCancel();
     }
   };
 
@@ -113,11 +122,11 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
             onChange={(e) => handleChange(api_param_name, e.target.value)}
             error={!!error}
             helperText={error}
-            disabled={submitted || submitting}
+            disabled={!isEditable || submitting}
             variant="outlined"
             size="small"
             InputProps={{
-              readOnly: submitted,
+              readOnly: isReadonly,
             }}
           />
         );
@@ -133,11 +142,11 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
             onChange={(e) => handleChange(api_param_name, e.target.value)}
             error={!!error}
             helperText={error}
-            disabled={submitted || submitting}
+            disabled={!isEditable || submitting}
             variant="outlined"
             size="small"
             InputProps={{
-              readOnly: submitted,
+              readOnly: isReadonly,
             }}
           />
         );
@@ -148,7 +157,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
             key={api_param_name}
             fullWidth
             error={!!error}
-            disabled={submitted || submitting}
+            disabled={!isEditable || submitting}
             size="small"
           >
             <InputLabel>{api_param_name}</InputLabel>
@@ -156,6 +165,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
               value={value}
               onChange={(e) => handleChange(api_param_name, e.target.value)}
               label={api_param_name}
+              readOnly={isReadonly}
             >
               {option?.map((opt) => (
                 <MenuItem key={opt.option_value} value={opt.option_value}>
@@ -178,11 +188,14 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
             onChange={(e) => handleChange(api_param_name, e.target.value)}
             error={!!error}
             helperText={error}
-            disabled={submitting}
+            disabled={!isEditable || submitting}
             variant="outlined"
             size="small"
             InputLabelProps={{
               shrink: true,
+            }}
+            InputProps={{
+              readOnly: isReadonly,
             }}
           />
         );
@@ -197,11 +210,45 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
             onChange={(e) => handleChange(api_param_name, e.target.value)}
             error={!!error}
             helperText={error}
-            disabled={submitting}
+            disabled={!isEditable || submitting}
             variant="outlined"
             size="small"
+            InputProps={{
+              readOnly: isReadonly,
+            }}
           />
         );
+    }
+  };
+
+  const renderStatusMessage = () => {
+    switch (formStatus) {
+      case 'submitted':
+        return (
+          <Alert severity="success" sx={{ mt: 2 }}>
+            ✅ パラメータが送信されました。実行結果をお待ちください...
+          </Alert>
+        );
+      case 'cancelled':
+        return (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            🚫 操作がキャンセルされました。入力内容は保持されています。
+          </Alert>
+        );
+      case 'completed':
+        return (
+          <Alert severity="success" sx={{ mt: 2 }}>
+            ✅ 実行が完了しました。
+          </Alert>
+        );
+      case 'error':
+        return (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            ❌ 実行中にエラーが発生しました。
+          </Alert>
+        );
+      default:
+        return null;
     }
   };
 
@@ -210,9 +257,10 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
       elevation={2}
       sx={{
         p: 2.5,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: isReadonly ? '#fafafa' : '#f5f5f5',
         borderRadius: 2,
         maxWidth: 500,
+        opacity: isReadonly ? 0.9 : 1,
       }}
     >
       <Box component="form" onSubmit={handleSubmit}>
@@ -221,7 +269,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
         </Typography>
         
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          以下のパラメータを入力してください
+          {isEditable ? '以下のパラメータを入力してください' : 'パラメータ（読み取り専用）'}
         </Typography>
 
         {submitError && (
@@ -234,13 +282,9 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
           {params.map(param => renderField(param))}
         </Box>
 
-        {submitted && (
-          <Alert severity="success" sx={{ mt: 2 }}>
-            ✅ パラメータが送信されました。実行結果をお待ちください...
-          </Alert>
-        )}
+        {renderStatusMessage()}
 
-        {!submitted && (
+        {isEditable && (
           <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
             <Button
               type="submit"
@@ -259,7 +303,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
               variant="outlined"
               color="secondary"
               size="small"
-              onClick={onCancel}
+              onClick={handleCancelClick}
               disabled={submitting}
               sx={{ minWidth: 80, py: 0.75 }}
             >
@@ -270,7 +314,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
         )}
 
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          Flow ID: {flowId}
+          Flow ID: {flowId} | 状態: {formStatus}
         </Typography>
       </Box>
     </Paper>

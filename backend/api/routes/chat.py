@@ -443,3 +443,98 @@ async def chat_health_check():
         }
 
 
+class FormStatusUpdate(BaseModel):
+    """表単状態更新リクエスト"""
+    form_status: str
+    form_data: Optional[Dict[str, Any]] = None
+    execution_result: Optional[Dict[str, Any]] = None
+
+
+@router.patch("/messages/{message_id}/form-status")
+async def update_message_form_status(
+    message_id: str,
+    update_data: FormStatusUpdate,
+    db: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    表単メッセージの状態を更新
+    
+    Args:
+        message_id: メッセージID
+        update_data: 更新データ
+        db: データベースセッション
+        
+    Returns:
+        更新されたメッセージ情報
+    """
+    try:
+        from api.models.database import update_message_form_status_async
+        
+        default_logger.info(
+            f"Updating form status for message {message_id}: {update_data.form_status}"
+        )
+        
+        message = await update_message_form_status_async(
+            db=db,
+            message_id=message_id,
+            form_status=update_data.form_status,
+            form_data=update_data.form_data,
+            execution_result=update_data.execution_result
+        )
+        
+        if not message:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Message {message_id} not found"
+            )
+        
+        return format_success_response(
+            data=message.to_dict(),
+            message="Form status updated successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        default_logger.error(f"Error updating form status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/messages/{message_id}")
+async def get_message(
+    message_id: str,
+    db: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    メッセージIDでメッセージを取得
+    
+    Args:
+        message_id: メッセージID
+        db: データベースセッション
+        
+    Returns:
+        メッセージ情報
+    """
+    try:
+        from api.models.database import get_message_by_id_async
+        
+        message = await get_message_by_id_async(db, message_id)
+        
+        if not message:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Message {message_id} not found"
+            )
+        
+        return format_success_response(
+            data=message.to_dict(),
+            message="Message retrieved successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        default_logger.error(f"Error retrieving message: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+

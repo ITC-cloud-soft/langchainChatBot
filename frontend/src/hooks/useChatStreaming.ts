@@ -110,10 +110,12 @@ export const useChatStreaming = ({
             } else if (chunk.type === 'final') {
               fullResponse = chunk.response;
               sourceDocuments = chunk.source_documents || [];
-              // 最終レスポンスで更新
+              // 最終レスポンスで更新（message_idとmetadataを含める）
               onUpdateLastMessage({
                 content: fullResponse,
                 sourceDocuments,
+                message_id: chunk.message_id,
+                metadata: chunk.metadata,
               });
             } else if (chunk.type === 'error') {
               throw new Error(chunk.error);

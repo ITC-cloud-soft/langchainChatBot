@@ -433,3 +433,82 @@ async def add_chat_message_async(
     await db.commit()
     await db.refresh(message)
     return message
+
+
+async def update_message_form_status_async(
+    db: AsyncSession,
+    message_id: str,
+    form_status: str,
+    form_data: Optional[Dict[str, Any]] = None,
+    execution_result: Optional[Dict[str, Any]] = None
+) -> Optional[ChatMessage]:
+    """
+    メッセージの表単状態を更新
+    
+    Args:
+        db: データベースセッション
+        message_id: メッセージID
+        form_status: 表単状態 (pending/submitted/cancelled/completed/error)
+        form_data: 表単データ
+        execution_result: 実行結果（完了時）
+        
+    Returns:
+        更新されたChatMessageオブジェクト
+    """
+    from api.core.utils import default_logger
+    logger = default_logger
+    
+    logger.info(f"[DB UPDATE] Attempting to update message {message_id} to status {form_status}")
+    
+    result = await db.execute(
+        select(ChatMessage).where(ChatMessage.message_id == message_id)
+    )
+    message = result.scalar_one_or_none()
+    
+    if message:
+        logger.info(f"[DB UPDATE] Found message {message_id}, current metadata: {message.message_metadata}")
+        
+        metadata = message.message_metadata or {}
+        metadata['form_status'] = form_status
+        
+        if form_data is not None:
+            metadata['form_data'] = form_data
+        
+        if form_status == 'submitted':
+            metadata['submitted_at'] = datetime.now().isoformat()
+        elif form_status == 'cancelled':
+            metadata['cancelled_at'] = datetime.now().isoformat()
+        elif form_status in ['completed', 'error']:
+            metadata['completed_at'] = datetime.now().isoformat()
+            if execution_result:
+                metadata['execution_result'] = execution_result
+        
+        message.message_metadata = metadata
+        await db.commit()
+        await db.refresh(message)
+        
+        logger.info(f"[DB UPDATE] Successfully updated message {message_id}, new metadata: {message.message_metadata}")
+    else:
+        logger.warning(f"[DB UPDATE] Message {message_id} not found in database")
+    
+    return message
+
+
+async def get_message_by_id_async(
+    db: AsyncSession,
+    message_id: str
+) -> Optional[ChatMessage]:
+    """
+    メッセージIDでメッセージを取得
+    
+    Args:
+        db: データベースセッション
+        message_id: メッセージID
+        
+    Returns:
+        ChatMessageオブジェクト
+    """
+    result = await db.execute(
+        select(ChatMessage).where(ChatMessage.message_id == message_id)
+    )
+    return result.scalar_one_or_none()

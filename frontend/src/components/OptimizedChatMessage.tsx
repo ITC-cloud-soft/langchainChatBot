@@ -19,6 +19,8 @@ interface OptimizedChatMessageProps {
     role: 'user' | 'assistant' | 'system';
     content: string;
     timestamp: string;
+    message_id?: string;
+    metadata?: Record<string, any>;
     sourceDocuments?: Array<{
       content: string;
       metadata: Record<string, unknown>;
@@ -162,6 +164,8 @@ const OptimizedChatMessage: React.FC<OptimizedChatMessageProps> = memo(({ messag
           <ChatMessageWithForm
             content={message.content}
             role={message.role}
+            messageId={message.message_id}
+            metadata={message.metadata}
             onFlowExecuted={(result) => {
               if (result.type === 'send_message' && onSendMessage) {
                 onSendMessage(result.message);

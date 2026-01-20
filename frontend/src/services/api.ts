@@ -228,6 +228,7 @@ export const chatApi = {
 
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
 
     return {
       async *[Symbol.asyncIterator]() {
@@ -239,18 +240,23 @@ export const chatApi = {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += chunk;
+            const lines = buffer.split('\n');
+            
+            // 最後の行が不完全な可能性があるため、バッファに保持
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
               if (line.startsWith('data: ')) {
-                const data = line.slice(6);
+                const data = line.slice(6).trim();
                 if (data === '[DONE]') break;
+                if (!data) continue;
 
                 try {
                   const parsed = JSON.parse(data);
                   yield parsed;
                 } catch (e) {
-                  logger.error('Error parsing SSE data:', e);
+                  logger.error('Error parsing SSE data:', e, 'Data:', data);
                 }
               }
             }
