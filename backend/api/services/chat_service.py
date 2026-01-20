@@ -671,6 +671,12 @@ class ChatService(BaseService):
                         # 只处理type为flow的情况,忽略tool类型
                         pattern = r'\{\s*"id"\s*:\s*"?(\d+)"?\s*,\s*"type"\s*:\s*"flow"'
                         match = re.search(pattern, full_response)
+                        
+                        # 如果JSON格式未匹配，尝试检测普通文本中的Flow ID引用
+                        # 例如: "Flow ID: 5" 或 "**Flow ID**: 5"
+                        if not match:
+                            text_pattern = r'\*\*Flow\s+ID\*\*\s*:\s*(\d+)'
+                            match = re.search(text_pattern, full_response)
                     
                     if not param_match and match:
                         flow_id = match.group(1)

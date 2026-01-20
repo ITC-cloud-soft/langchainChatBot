@@ -71,6 +71,11 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
       content_preview: content.substring(0, 100)
     });
     
+    // 状態をリセット
+    setFlowData(null);
+    setExecutionResult(null);
+    setExecutionError(null);
+    
     // metadataにparams定義がある場合は、それを使用
     if (metadata?.params && metadata?.flow_id) {
       console.log('[ChatMessageWithForm] Using params from metadata:', metadata.params);
@@ -89,6 +94,7 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
         console.log('[ChatMessageWithForm] Parsed params from content:', parsed);
         setFlowData(parsed);
       }
+      return;
     }
     
     // メッセージがFlow実行結果かチェック
@@ -98,7 +104,7 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
         setExecutionResult(parsed);
       }
     }
-  }, [content, role, metadata]);
+  }, [content, role, metadata, messageId]);
 
   const handleFlowSubmit = async (flowId: string, values: Record<string, any>) => {
     try {
