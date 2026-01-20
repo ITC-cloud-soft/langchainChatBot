@@ -104,21 +104,26 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
     try {
       console.log('[ChatMessageWithForm] handleFlowSubmit called', { flowId, messageId, values });
       
+      // messageIdが存在しない場合はエラー
+      if (!messageId) {
+        const errorMsg = 'メッセージIDが見つかりません。フォームを送信できません。';
+        console.error('[ChatMessageWithForm]', errorMsg);
+        setExecutionError(errorMsg);
+        return;
+      }
+      
       // 即座にローカル状態を更新してUIを反映
       setLocalFormStatus('submitted');
       setLocalFormData(values);
       
       // バックエンドAPIを呼び出してデータベースを更新
-      if (messageId) {
-        console.log('[ChatMessageWithForm] Calling updateFormStatus API', { messageId });
-        await updateFormStatus(messageId, 'submitted', values);
-        console.log('[ChatMessageWithForm] Form status updated to submitted in database');
-      } else {
-        console.warn('[ChatMessageWithForm] No messageId provided, skipping database update');
-      }
+      console.log('[ChatMessageWithForm] Calling updateFormStatus API', { messageId });
+      await updateFormStatus(messageId, 'submitted', values);
+      console.log('[ChatMessageWithForm] Form status updated to submitted in database');
       
       const paramsJson = JSON.stringify(values);
-      const message = `EXECUTE_FLOW:${flowId}:${paramsJson}`;
+      // message_idを含めて、バックエンドで正確に状態を更新できるようにする
+      const message = `EXECUTE_FLOW:${flowId}:${messageId}:${paramsJson}`;
       
       if (onFlowExecuted) {
         onFlowExecuted({
@@ -140,15 +145,21 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
 
   const handleCancel = async () => {
     try {
+      // messageIdが存在しない場合はエラー
+      if (!messageId) {
+        const errorMsg = 'メッセージIDが見つかりません。';
+        console.error('[ChatMessageWithForm]', errorMsg);
+        setExecutionError(errorMsg);
+        return;
+      }
+      
       // 即座にローカル状態を更新してUIを反映
       setLocalFormStatus('cancelled');
       setLocalFormData(savedFormData);
       
       // バックエンドAPIを呼び出してデータベースを更新
-      if (messageId) {
-        await updateFormStatus(messageId, 'cancelled', savedFormData);
-        console.log('Form status updated to cancelled in database');
-      }
+      await updateFormStatus(messageId, 'cancelled', savedFormData);
+      console.log('Form status updated to cancelled in database');
     } catch (error) {
       console.error('Form cancellation error:', error);
       // エラーが発生した場合はローカル状態をリセット

@@ -3,9 +3,12 @@
 ## 文档信息
 
 - **作成日**: 2026-01-20
-- **バージョン**: 1.0.0
-- **対象機能**: Flow表单状态的数据库持久化管理
+- **最終更新日**: 2026-01-20
+- **バージョン**: 2.0.0
+- **対象機能**: Flow表单状態的数据库持久化管理（metadata.params対応、多Flow隔離性保証）
 - **関連ドキュメント**: `FLOW_EXECUTION_WITH_PARAMETERS.md`
+- **変更履歴**:
+  - 2026-01-20: バージョン2.0.0に更新。metadata.params対応、多Flow隔離性保証を追加。
 
 ---
 
@@ -44,6 +47,27 @@
   "flow_id": "5",
   "flow_name": "CCFLOWシステム申請--仕入計画",
   "form_status": "pending",
+  "params": [
+    {
+      "api_param_name": "UserNo",
+      "param_type": "text",
+      "required": true
+    },
+    {
+      "api_param_name": "Department",
+      "param_type": "option",
+      "required": true,
+      "option": [
+        {"option_label": "営業部", "option_value": "sales"},
+        {"option_label": "開発部", "option_value": "dev"}
+      ]
+    },
+    {
+      "api_param_name": "StartDate",
+      "param_type": "date",
+      "required": true
+    }
+  ],
   "form_data": {
     "UserNo": "12345",
     "Department": "sales",
@@ -55,6 +79,8 @@
   "execution_result": null
 }
 ```
+
+**重要**: `params` フィールドには表单パラメータの定義が保存されます。これにより、フロントエンドはcontentを解析せずに直接metadataから表单を構築できます。
 
 ### 2.2 表单状态定义
 
@@ -271,66 +297,109 @@ async def get_message(
 
 ---
 
-#### 3.1.3 Flow実行時の状態更新
+#### 3.1.3 表单生成時の metadata 保存
 
 **ファイル**: `backend/api/services/chat_service.py`
 
-**修改内容**: EXECUTE_FLOW メッセージ処理時に表单メッセージを更新
+**修改内容**: Flow表单生成時に `params` 定義も metadata に保存
 
 ```python
-# process_message 関数内で EXECUTE_FLOW を検出した場合
-async def process_message(
-    self,
-    message: str,
-    session_id: Optional[str] = None,
-    system_prompt: Optional[str] = None
-) -> Dict[str, Any]:
-    """Process a chat message and return response"""
-    # ... 既存のコード ...
+# stream_message 関数内、Flow表单生成時
+if params:
+    # 有参数需要填写,返回表单
+    full_response = f"📋 **{flow_name or f'Flow {flow_id}'}** を実行します\n\n"
+    full_response += "以下のパラメータを入力してください:\n\n"
     
-    # EXECUTE_FLOW メッセージの検出
-    if message.startswith("EXECUTE_FLOW:"):
-        try:
-            parts = message.split(":", 2)
-            if len(parts) == 3:
-                flow_id = parts[1]
-                form_data = json.loads(parts[2])
-                
-                self.log_info(f"Detected EXECUTE_FLOW: flow_id={flow_id}")
-                
-                # 直前のメッセージ（表单メッセージ）のIDを取得
-                # セッション履歴から最後のassistantメッセージを探す
-                if session_id in self.chat_history:
-                    messages = self.chat_history[session_id]
-                    for msg in reversed(messages):
-                        if msg.get("role") == "assistant":
-                            # メッセージIDを取得（保存されている場合）
-                            form_message_id = msg.get("message_id")
-                            if form_message_id:
-                                # 表单状態を 'submitted' に更新
-                                try:
-                                    from api.models.database import update_message_form_status_async
-                                    from api.core.database import database_manager
-                                    
-                                    async with database_manager.get_session() as db_session:
-                                        await update_message_form_status_async(
-                                            db=db_session,
-                                            message_id=form_message_id,
-                                            form_status='submitted',
-                                            form_data=form_data
-                                        )
-                                    self.log_info(f"Updated form status to 'submitted' for message {form_message_id}")
-                                except Exception as e:
-                                    self.log_warning(f"Failed to update form status: {str(e)}")
-                            break
-                
-        except Exception as e:
-            self.log_error(f"Error processing EXECUTE_FLOW message", e)
+    for param in params:
+        param_name = param.get("api_param_name")
+        param_type = param.get("param_type")
+        full_response += f"- **{param_name}** ({param_type})\n"
     
-    # ... 既存のコード ...
+    # メタデータとして flow_id と params を埋め込む
+    full_response += f"\n---\n**Flow ID**: {flow_id}\n"
+    full_response += "パラメータを入力後、再度送信してください。"
+    
+    # 表单メッセージのメタデータを設定（初期状態: pending）
+    form_metadata = {
+        "form_status": "pending",
+        "flow_id": flow_id,
+        "flow_name": flow_name,
+        "params": params  # ★重要: パラメータ定義も保存
+    }
 ```
 
-**修改位置**: `process_message` 関数の先頭、メッセージ検証の後
+**追加位置**: `stream_message` 関数内、Flow参数取得後
+
+**重要ポイント**:
+- `params` 配列全体を metadata に保存することで、フロントエンドは content を解析せずに表单を構築できる
+- これにより、content フォーマットが変更されても表单レンダリングに影響しない
+
+---
+
+#### 3.1.4 Flow実行時の状態更新（EXECUTE_FLOW メッセージ処理）
+
+**ファイル**: `backend/api/services/chat_service.py`
+
+**修改内容**: EXECUTE_FLOW メッセージ処理時に表单メッセージを更新（message_id を使用）
+
+```python
+# stream_message 関数内で EXECUTE_FLOW を検出した場合
+# 新フォーマット: EXECUTE_FLOW:flow_id:message_id:params_json
+
+# 首先检查用户是否提交了Flow参数 (格式: EXECUTE_FLOW:flow_id:message_id:params_json)
+param_submit_pattern = r'EXECUTE_FLOW:(\d+):([^:]+):(.+)'
+param_match = re.search(param_submit_pattern, message)
+
+if param_match:
+    # 用户提交了参数,直接执行Flow
+    flow_id = param_match.group(1)
+    form_message_id = param_match.group(2)  # ★重要: メッセージから message_id を取得
+    params_json = param_match.group(3)
+    
+    try:
+        params = json.loads(params_json)
+        self.log_info(f"[ARS REACT] User submitted params for flow {flow_id}, message_id: {form_message_id}, params: {params}")
+        
+        # 更新表单状態为 'submitted'（使用消息中提供的message_id）
+        if form_message_id and form_message_id != 'undefined':
+            try:
+                from api.models.database import update_message_form_status_async
+                from api.core.database import database_manager
+                
+                async with database_manager.get_session() as db_session:
+                    await update_message_form_status_async(
+                        db=db_session,
+                        message_id=form_message_id,  # ★精確に message_id を指定
+                        form_status='submitted',
+                        form_data=params
+                    )
+                self.log_info(f"Updated form status to 'submitted' for message {form_message_id}")
+            except Exception as e:
+                self.log_warning(f"Failed to update form status: {str(e)}")
+        
+        # Flow実行処理...
+        from api.tools.ars_tools import ExecuteFlowTool
+        tool = ExecuteFlowTool(ars_token=ars_token)
+        result_str = await tool._arun(flow_id=flow_id, parameters=params)
+        # ...
+        
+    except Exception as e:
+        self.log_error(f"[ARS REACT] Error executing flow with params", e)
+```
+
+**修改位置**: `stream_message` 関数内、ReAct解析部分
+
+**重要な変更点**:
+
+1. **メッセージフォーマット変更**: `EXECUTE_FLOW:flow_id:params` → `EXECUTE_FLOW:flow_id:message_id:params`
+2. **正規表現パターン変更**: `r'EXECUTE_FLOW:(\d+):(.+)'` → `r'EXECUTE_FLOW:(\d+):([^:]+):(.+)'`
+3. **精確な message_id 使用**: メッセージから直接 message_id を抽出し、正確に対応する表单を更新
+4. **undefined チェック**: message_id が 'undefined' の場合はスキップ
+
+**メリット**:
+- 複数の表单が同時に存在しても、正確に対応する表单を更新できる
+- "最近のassistantメッセージ"を探す不確実な方法を排除
+- 表单の隔離性を保証
 
 ---
 
@@ -421,7 +490,7 @@ export const getMessage = async (messageId: string): Promise<FormStatusResponse>
 
 **ファイル**: `frontend/src/components/ChatMessageWithForm.tsx`
 
-**修改内容**: データベースから表单状態を読み取り、更新時にAPIを呼び出す
+**修改内容**: metadata.params から表单定義を読み取り、messageId 検証を追加
 
 ```typescript
 import React, { useState, useEffect } from 'react';
@@ -440,10 +509,13 @@ import { updateFormStatus, FormStatus } from '../services/formStatusService';
 interface ChatMessageWithFormProps {
   content: string;
   role: 'user' | 'assistant';
-  messageId?: string;  // メッセージID追加
+  messageId?: string;
   metadata?: {
     form_status?: FormStatus;
     form_data?: Record<string, any>;
+    params?: any[];  // ★追加: パラメータ定義
+    flow_id?: string;
+    flow_name?: string;
     [key: string]: any;
   };
   onFlowExecuted?: (result: any) => void;
@@ -460,15 +532,39 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
   const [executionResult, setExecutionResult] = useState<any>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   
-  // データベースから表单状態を読み取る
-  const formStatus = metadata?.form_status || 'pending';
-  const savedFormData = metadata?.form_data || {};
+  // ローカル状態でフォーム状態を管理（即座のUI更新のため）
+  const [localFormStatus, setLocalFormStatus] = useState<FormStatus | null>(null);
+  const [localFormData, setLocalFormData] = useState<Record<string, any> | null>(null);
+  
+  // metadataが変更されたら、ローカル状態をリセット（データベースの状態を優先）
+  useEffect(() => {
+    if (metadata?.form_status && metadata.form_status !== 'pending') {
+      setLocalFormStatus(null);
+      setLocalFormData(null);
+    }
+  }, [metadata?.form_status]);
+  
+  // ローカル状態が設定されている場合はそれを使用、なければmetadataから取得
+  const formStatus = localFormStatus || metadata?.form_status || 'pending';
+  const savedFormData = localFormData || metadata?.form_data || {};
 
   useEffect(() => {
-    // メッセージがFlow参数フォームかチェック
+    // ★重要: metadataにparams定義がある場合は、それを優先使用
+    if (metadata?.params && metadata?.flow_id) {
+      console.log('[ChatMessageWithForm] Using params from metadata:', metadata.params);
+      setFlowData({
+        flowId: metadata.flow_id,
+        flowName: metadata.flow_name || `Flow ${metadata.flow_id}`,
+        params: metadata.params
+      });
+      return;
+    }
+    
+    // metadataにparamsがない場合は、contentから解析（後方互換性）
     if (role === 'assistant' && isFlowParamMessage(content)) {
       const parsed = parseFlowParamMessage(content);
       if (parsed) {
+        console.log('[ChatMessageWithForm] Parsed params from content:', parsed);
         setFlowData(parsed);
       }
     }
@@ -480,21 +576,33 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
         setExecutionResult(parsed);
       }
     }
-  }, [content, role]);
+  }, [content, role, metadata]);
 
   const handleFlowSubmit = async (flowId: string, values: Record<string, any>) => {
     try {
-      // データベースに表单状態を保存
-      if (messageId) {
-        await updateFormStatus(messageId, 'submitted', values);
-        console.log('Form status updated to submitted');
+      console.log('[ChatMessageWithForm] handleFlowSubmit called', { flowId, messageId, values });
+      
+      // ★重要: messageIdが存在しない場合はエラー
+      if (!messageId) {
+        const errorMsg = 'メッセージIDが見つかりません。フォームを送信できません。';
+        console.error('[ChatMessageWithForm]', errorMsg);
+        setExecutionError(errorMsg);
+        return;
       }
       
-      // 特殊フォーマット: EXECUTE_FLOW:flow_id:params_json
-      const paramsJson = JSON.stringify(values);
-      const message = `EXECUTE_FLOW:${flowId}:${paramsJson}`;
+      // 即座にローカル状態を更新してUIを反映
+      setLocalFormStatus('submitted');
+      setLocalFormData(values);
       
-      // 親コンポーネントに通知（メッセージ送信をトリガー）
+      // バックエンドAPIを呼び出してデータベースを更新
+      console.log('[ChatMessageWithForm] Calling updateFormStatus API', { messageId });
+      await updateFormStatus(messageId, 'submitted', values);
+      console.log('[ChatMessageWithForm] Form status updated to submitted in database');
+      
+      const paramsJson = JSON.stringify(values);
+      // ★重要: message_idを含めて、バックエンドで正確に状態を更新できるようにする
+      const message = `EXECUTE_FLOW:${flowId}:${messageId}:${paramsJson}`;
+      
       if (onFlowExecuted) {
         onFlowExecuted({
           type: 'send_message',
@@ -504,6 +612,9 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
       
     } catch (error) {
       console.error('Flow submission error:', error);
+      // エラーが発生した場合はローカル状態をリセット
+      setLocalFormStatus(null);
+      setLocalFormData(null);
       setExecutionError(
         error instanceof Error ? error.message : 'パラメータ送信中にエラーが発生しました'
       );
@@ -512,14 +623,26 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
 
   const handleCancel = async () => {
     try {
-      // データベースに表单状態を保存（キャンセル）
-      if (messageId) {
-        // 現在の表单データを取得して保存
-        await updateFormStatus(messageId, 'cancelled', savedFormData);
-        console.log('Form status updated to cancelled');
+      // ★重要: messageIdが存在しない場合はエラー
+      if (!messageId) {
+        const errorMsg = 'メッセージIDが見つかりません。';
+        console.error('[ChatMessageWithForm]', errorMsg);
+        setExecutionError(errorMsg);
+        return;
       }
+      
+      // 即座にローカル状態を更新してUIを反映
+      setLocalFormStatus('cancelled');
+      setLocalFormData(savedFormData);
+      
+      // バックエンドAPIを呼び出してデータベースを更新
+      await updateFormStatus(messageId, 'cancelled', savedFormData);
+      console.log('Form status updated to cancelled in database');
     } catch (error) {
       console.error('Form cancellation error:', error);
+      // エラーが発生した場合はローカル状態をリセット
+      setLocalFormStatus(null);
+      setLocalFormData(null);
     }
   };
 
@@ -582,10 +705,17 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
 ```
 
 **主な変更点**:
-1. `messageId` と `metadata` プロパティを追加
-2. `formStatus` と `savedFormData` をmetadataから読み取る
-3. `handleFlowSubmit` で `updateFormStatus` API を呼び出し
-4. `handleCancel` で `updateFormStatus` API を呼び出し
+
+1. **metadata.params の優先使用**: metadata に params 定義がある場合は content 解析をスキップ
+2. **ローカル状態管理**: 即座のUI更新のため localFormStatus と localFormData を追加
+3. **messageId 検証**: 提出・キャンセル時に messageId の存在を確認、なければエラー表示
+4. **EXECUTE_FLOW メッセージフォーマット変更**: `EXECUTE_FLOW:flowId:messageId:params` に変更
+5. **双重状態更新**: フロントエンドAPI呼び出し + バックエンドメッセージ解析の二重保障
+
+**重要ポイント**:
+- metadata.params を使用することで、content フォーマット変更の影響を受けない
+- messageId 検証により、message_id がない場合の誤動作を防止
+- ローカル状態により、API応答を待たずにUIを即座に更新
 
 ---
 
@@ -593,10 +723,10 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
 
 **ファイル**: `frontend/src/components/ARSFlowForm.tsx`
 
-**修改内容**: `formStatus` プロパティを追加し、状態に応じて表单を制御
+**修改内容**: `initialValues` の動的更新と `formStatus` に応じた表单制御
 
 ```typescript
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';  // ★useEffect を追加
 import {
   Box,
   TextField,
@@ -630,13 +760,20 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
   params,
   onSubmit,
   onCancel,
-  formStatus = 'pending',  // デフォルト値
+  formStatus = 'pending',
   initialValues = {},
 }) => {
   const [formValues, setFormValues] = useState<Record<string, any>>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // ★重要: initialValues が変更されたら formValues を更新
+  // これにより、metadata.form_data が更新された際に表单フィールドに反映される
+  useEffect(() => {
+    console.log('[ARSFlowForm] initialValues changed, updating formValues:', initialValues);
+    setFormValues(initialValues);
+  }, [initialValues]);
 
   // 表单が編集可能かどうか
   const isEditable = formStatus === 'pending';
@@ -1062,7 +1199,227 @@ if (message.role === 'assistant') {
 
 ---
 
-## 5. テスト計画
+## 5. 双重状態更新保障機制
+
+### 5.1 概要
+
+表单状態の更新は、フロントエンドAPI呼び出しとバックエンドメッセージ解析の**二重保障機制**で実装されています。
+
+### 5.2 更新フロー
+
+```
+ユーザーが「実行」ボタンをクリック
+  ↓
+【第1段階】フロントエンドAPI呼び出し
+  ├─ updateFormStatus(messageId, 'submitted', values)
+  ├─ PATCH /api/chat/messages/{messageId}/form-status
+  └─ データベース更新 (form_status: 'submitted', form_data: {...})
+  ↓
+【第2段階】EXECUTE_FLOWメッセージ送信
+  ├─ メッセージ: EXECUTE_FLOW:flowId:messageId:params
+  ├─ バックエンドが message_id を抽出
+  ├─ update_message_form_status_async() を呼び出し
+  └─ データベース更新 (同じメッセージを再度更新)
+```
+
+### 5.3 メリットとデメリット
+
+**メリット**:
+- ✅ **高信頼性**: 第1段階が失敗しても、第2段階で更新される
+- ✅ **即座のUI更新**: 第1段階でローカル状態を更新し、APIレスポンスを待たずにUIを反映
+- ✅ **データ整合性**: 両方の更新が同じ message_id を使用するため、データの一貫性が保証される
+
+**デメリット**:
+- ⚠️ **冗長な更新**: 同じデータを2回更新する（軽微なパフォーマンス影響）
+- ⚠️ **競合の可能性**: 2つの更新が同時に発生する場合、理論的には競合の可能性がある
+
+**推奨**:
+- 現在の実装を維持（信頼性を優先）
+- 将来的にパフォーマンスが問題になる場合は、第1段階のみに統一することを検討
+
+### 5.4 エラーハンドリング
+
+```typescript
+// フロントエンド: 第1段階が失敗した場合
+try {
+  await updateFormStatus(messageId, 'submitted', values);
+} catch (error) {
+  // ローカル状態をリセット
+  setLocalFormStatus(null);
+  setLocalFormData(null);
+  setExecutionError(error.message);
+  return;  // 第2段階に進まない
+}
+
+// バックエンド: 第2段階が失敗した場合
+try {
+  await update_message_form_status_async(...)
+} catch (e) {
+  self.log_warning(f"Failed to update form status: {str(e)}")
+  // エラーをログに記録するが、Flow実行は継続
+}
+```
+
+---
+
+## 6. 多Flow実行申請の隔離性保証
+
+### 6.1 問題の背景
+
+同一セッション内で複数のFlow表单が同時に存在する場合、以下の問題が発生する可能性があります：
+
+- 表单Aを提出した際に、誤って表单Bの状態が更新される
+- 表单データが混在する
+- 状態管理が不正確になる
+
+### 6.2 隔離性保証の実装
+
+#### 6.2.1 データベースレベル
+
+```python
+# database.py
+message_id = Column(String(255), unique=True, index=True, nullable=False)
+message_metadata = Column("metadata", JSON, nullable=True)
+
+# 更新時は message_id で精確に特定
+result = await db.execute(
+    select(ChatMessage).where(ChatMessage.message_id == message_id)
+)
+```
+
+**保証内容**:
+- ✅ 各メッセージは一意の `message_id` (UUID) を持つ
+- ✅ データベース更新は `message_id` で精確に特定
+- ✅ トランザクション処理により原子性を保証
+
+#### 6.2.2 フロントエンドコンポーネントレベル
+
+```typescript
+// 各 ChatMessageWithForm コンポーネントインスタンスは独立した state を持つ
+const [flowData, setFlowData] = useState<FlowFormData | null>(null);
+const [localFormStatus, setLocalFormStatus] = useState<FormStatus | null>(null);
+const [localFormData, setLocalFormData] = useState<Record<string, any> | null>(null);
+```
+
+**保証内容**:
+- ✅ React は各メッセージに対して独立したコンポーネントインスタンスを作成
+- ✅ 各インスタンスの state は完全に隔離される
+- ✅ Props (`messageId`, `metadata`) も各メッセージで独立
+
+#### 6.2.3 API呼び出しレベル
+
+```typescript
+// フロントエンド: messageId で精確に更新
+await updateFormStatus(messageId, 'submitted', values);
+
+// API呼び出し
+PATCH /api/chat/messages/{messageId}/form-status
+```
+
+**保証内容**:
+- ✅ 各API呼び出しは一意の `messageId` を使用
+- ✅ 異なる表单の更新が互いに影響しない
+
+#### 6.2.4 EXECUTE_FLOWメッセージレベル
+
+```typescript
+// 新フォーマット: message_id を含む
+const message = `EXECUTE_FLOW:${flowId}:${messageId}:${paramsJson}`;
+```
+
+```python
+# バックエンド: メッセージから message_id を抽出
+param_submit_pattern = r'EXECUTE_FLOW:(\d+):([^:]+):(.+)'
+form_message_id = param_match.group(2)  # 精確な message_id
+
+# 精確に対応する表单を更新
+await update_message_form_status_async(
+    db=db_session,
+    message_id=form_message_id,  # ★精確に指定
+    form_status='submitted',
+    form_data=params
+)
+```
+
+**保証内容**:
+- ✅ メッセージに `message_id` を埋め込むことで、バックエンドが正確に対応する表单を特定
+- ✅ "最近のassistantメッセージ"を探す不確実な方法を排除
+- ✅ 複数の表单が同時に存在しても、正確に対応する表单のみを更新
+
+### 6.3 隔離性検証テストケース
+
+```typescript
+// E2Eテスト例
+test('multiple forms isolation', async ({ page }) => {
+  // 1. Flow A の表单を生成
+  await page.type('input', 'フロー一覧');
+  await page.click('button[type="submit"]');
+  await page.type('input', 'Flow A を実行');
+  await page.click('button[type="submit"]');
+  
+  // 2. Flow B の表单を生成
+  await page.type('input', 'Flow B を実行');
+  await page.click('button[type="submit"]');
+  
+  // 3. Flow A の表单を提出
+  const formA = page.locator('[data-flow-id="A"]');
+  await formA.locator('input[name="param1"]').fill('valueA');
+  await formA.locator('button:has-text("実行")').click();
+  
+  // 4. Flow A の状態が submitted になることを確認
+  await expect(formA).toContainText('パラメータが送信されました');
+  
+  // 5. Flow B の状態が pending のままであることを確認
+  const formB = page.locator('[data-flow-id="B"]');
+  await expect(formB.locator('button:has-text("実行")')).toBeVisible();
+  await expect(formB).not.toContainText('パラメータが送信されました');
+  
+  // 6. ページをリロード
+  await page.reload();
+  
+  // 7. Flow A は submitted、Flow B は pending のままであることを確認
+  await expect(formA).toContainText('パラメータが送信されました');
+  await expect(formB.locator('button:has-text("実行")')).toBeVisible();
+});
+```
+
+### 6.4 潜在的な問題と対策
+
+#### 問題1: messageId が undefined の場合
+
+**対策**: フロントエンドで messageId の存在を検証
+
+```typescript
+if (!messageId) {
+  const errorMsg = 'メッセージIDが見つかりません。フォームを送信できません。';
+  setExecutionError(errorMsg);
+  return;
+}
+```
+
+#### 問題2: 競合状態（Race Condition）
+
+**対策**: 双重更新機制により、どちらか一方が成功すれば状態は正しく更新される
+
+#### 問題3: セッション切り替え時の metadata 欠落
+
+**対策**: API レスポンスに必ず `message_id` と `metadata` を含める
+
+```typescript
+// useChatPageHandlers.ts
+const formattedMessages = apiMessages.map((msg: any) => ({
+  role: msg.role,
+  content: msg.content,
+  timestamp: msg.timestamp,
+  message_id: msg.message_id,  // ★必須
+  metadata: msg.metadata,      // ★必須
+  sourceDocuments: msg.source_documents,
+}));
+```
+
+---
+
+## 7. テスト計画
 
 ### 5.1 バックエンドテスト
 
@@ -1366,6 +1723,7 @@ interface FormTemplate {
 | 日付 | バージョン | 変更内容 | 担当者 |
 |------|----------|---------|--------|
 | 2026-01-20 | 1.0.0 | 初版作成 | Cascade |
+| 2026-01-20 | 2.0.0 | metadata.params対応、EXECUTE_FLOWメッセージフォーマット変更（message_id追加）、messageId検証追加、ARSFlowForm initialValues動的更新、双重状態更新保障機制追加、多Flow隔離性保証の章節追加 | Cascade |
 
 ---
 

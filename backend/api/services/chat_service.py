@@ -588,44 +588,37 @@ class ChatService(BaseService):
                 if ars_token and full_response:
                     import re
                     
-                    # 首先检查用户是否提交了Flow参数 (格式: EXECUTE_FLOW:flow_id:params_json)
-                    param_submit_pattern = r'EXECUTE_FLOW:(\d+):(.+)'
+                    # 首先检查用户是否提交了Flow参数 (格式: EXECUTE_FLOW:flow_id:message_id:params_json)
+                    param_submit_pattern = r'EXECUTE_FLOW:(\d+):([^:]+):(.+)'
                     param_match = re.search(param_submit_pattern, message)
                     
                     if param_match:
                         # 用户提交了参数,直接执行Flow
                         flow_id = param_match.group(1)
-                        params_json = param_match.group(2)
+                        form_message_id = param_match.group(2)
+                        params_json = param_match.group(3)
                         
                         try:
                             params = json.loads(params_json)
-                            self.log_info(f"[ARS REACT] User submitted params for flow {flow_id}: {params}")
+                            self.log_info(f"[ARS REACT] User submitted params for flow {flow_id}, message_id: {form_message_id}, params: {params}")
                             
-                            # 更新表単状態为 'submitted'
-                            try:
-                                # 查找最近的assistant消息（表単消息）
-                                if session_id in self.chat_history:
-                                    messages = self.chat_history[session_id]
-                                    for msg in reversed(messages):
-                                        if msg.get("role") == "assistant" and msg.get("message_id"):
-                                            form_message_id = msg.get("message_id")
-                                            
-                                            from api.models.database import update_message_form_status_async
-                                            from api.core.database import database_manager
-                                            
-                                            async with database_manager.get_session() as db_session:
-                                                await update_message_form_status_async(
-                                                    db=db_session,
-                                                    message_id=form_message_id,
-                                                    form_status='submitted',
-                                                    form_data=params
-                                                )
-                                            self.log_info(f"Updated form status to 'submitted' for message {form_message_id}")
-                                            break
-                            except Exception as e:
-                                self.log_warning(f"Failed to update form status: {str(e)}")
+                            # 更新表单状态为 'submitted'（使用消息中提供的message_id）
+                            if form_message_id and form_message_id != 'undefined':
+                                try:
+                                    from api.models.database import update_message_form_status_async
+                                    from api.core.database import database_manager
+                                    
+                                    async with database_manager.get_session() as db_session:
+                                        await update_message_form_status_async(
+                                            db=db_session,
+                                            message_id=form_message_id,
+                                            form_status='submitted',
+                                            form_data=params
+                                        )
+                                    self.log_info(f"Updated form status to 'submitted' for message {form_message_id}")
+                                except Exception as e:
+                                    self.log_warning(f"Failed to update form status: {str(e)}")
                             
-
                             from api.tools.ars_tools import ExecuteFlowTool
                             tool = ExecuteFlowTool(ars_token=ars_token)
                             result_str = await tool._arun(flow_id=flow_id, parameters=params)
