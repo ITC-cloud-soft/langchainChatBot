@@ -2,6 +2,7 @@
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
 pydantic==2.11.7
+email-validator==2.2.0
 python-multipart==0.0.20
 python-dotenv==1.1.1
 httpx==0.28.1
@@ -17,6 +18,7 @@ langchain==0.3.27
 langchain-community==0.3.27
 langchain-openai==0.3.28
 langchain-anthropic==0.3.3
+langchain-google-genai==2.0.8
 langchain-ollama==0.3.6
 langchain-qdrant==0.2.0
 
@@ -39,6 +41,8 @@ aiofiles==24.1.0
 
 # Utilities
 tenacity==8.2.3
+nest-asyncio==1.6.0
+APScheduler==3.10.4
 
 # Testing
 pytest==7.4.3

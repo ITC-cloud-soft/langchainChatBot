@@ -27,8 +27,8 @@ class ChatSession(Base):
     session_id = Column(String(255), unique=True, index=True, nullable=False)
     title = Column(String(500), nullable=True)
     user_id = Column(String(255), nullable=True, index=True)  # Legacy field, kept for compatibility
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     session_metadata = Column("metadata", JSON, nullable=True)
     
@@ -66,7 +66,7 @@ class ChatMessage(Base):
     role = Column(String(50), nullable=False, index=True)  # 'user', 'assistant', 'system'
     content = Column(LONGTEXT, nullable=False)
     message_type = Column(String(50), default="text", nullable=False)  # 'text', 'file', 'error'
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime, default=datetime.now, nullable=False)
     source_documents = Column(JSON, nullable=True)  # List of source documents
     error_info = Column(JSON, nullable=True)  # Error information if message failed
     message_metadata = Column("metadata", JSON, nullable=True)
@@ -109,8 +109,8 @@ class ChatMetadata(Base):
     language = Column(String(10), default="ja", nullable=False)
     tags = Column(JSON, nullable=True)  # List of tags for categorization
     custom_fields = Column(JSON, nullable=True)  # Custom user-defined fields
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
     
     # Relationship with session
     session = relationship("ChatSession", foreign_keys=[session_id])
@@ -148,8 +148,8 @@ class ChatHistoryStats(Base):
     total_messages = Column(Integer, default=0, nullable=False)
     total_users = Column(Integer, default=0, nullable=False)
     avg_session_length = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
     
     def __repr__(self):
         return f"<ChatHistoryStats(date='{self.date}', total_sessions={self.total_sessions})>"
@@ -232,7 +232,7 @@ def add_chat_message(
     chat_meta = db.query(ChatMetadata).filter(ChatMetadata.session_id == session_id).first()
     if chat_meta:
         chat_meta.total_messages += 1
-        chat_meta.updated_at = datetime.utcnow()
+        chat_meta.updated_at = datetime.now()
         
         if role == "user":
             chat_meta.last_user_message = content[:255]
@@ -242,7 +242,7 @@ def add_chat_message(
         # Update session updated_at
         session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
         if session:
-            session.updated_at = datetime.utcnow()
+            session.updated_at = datetime.now()
     
     db.commit()
     db.refresh(message)
@@ -415,7 +415,7 @@ async def add_chat_message_async(
     chat_meta = metadata_result.scalar_one_or_none()
     if chat_meta:
         chat_meta.total_messages += 1
-        chat_meta.updated_at = datetime.utcnow()
+        chat_meta.updated_at = datetime.now()
         
         if role == "user":
             chat_meta.last_user_message = content[:255]
@@ -428,8 +428,92 @@ async def add_chat_message_async(
     )
     session = update_session.scalar_one_or_none()
     if session:
-        session.updated_at = datetime.utcnow()
+        session.updated_at = datetime.now()
     
     await db.commit()
     await db.refresh(message)
     return message
+
+
+async def update_message_form_status_async(
+    db: AsyncSession,
+    message_id: str,
+    form_status: str,
+    form_data: Optional[Dict[str, Any]] = None,
+    execution_result: Optional[Dict[str, Any]] = None
+) -> Optional[ChatMessage]:
+    """
+    メッセージの表単状態を更新
+    
+    Args:
+        db: データベースセッション
+        message_id: メッセージID
+        form_status: 表単状態 (pending/submitted/cancelled/completed/error)
+        form_data: 表単データ
+        execution_result: 実行結果（完了時）
+        
+    Returns:
+        更新されたChatMessageオブジェクト
+    """
+    from api.core.utils import default_logger
+    logger = default_logger
+    
+    logger.info(f"[DB UPDATE] Attempting to update message {message_id} to status {form_status}")
+    
+    result = await db.execute(
+        select(ChatMessage).where(ChatMessage.message_id == message_id)
+    )
+    message = result.scalar_one_or_none()
+    
+    if message:
+        logger.info(f"[DB UPDATE] Found message {message_id}, current metadata: {message.message_metadata}")
+        
+        # 既存のmetadataをコピーして新しいdictを作成（SQLAlchemyの変更検知のため）
+        metadata = dict(message.message_metadata or {})
+        metadata['form_status'] = form_status
+        
+        if form_data is not None:
+            metadata['form_data'] = form_data
+        
+        if form_status == 'submitted':
+            metadata['submitted_at'] = datetime.now().isoformat()
+        elif form_status == 'cancelled':
+            metadata['cancelled_at'] = datetime.now().isoformat()
+        elif form_status in ['completed', 'error']:
+            metadata['completed_at'] = datetime.now().isoformat()
+            if execution_result:
+                metadata['execution_result'] = execution_result
+        
+        # SQLAlchemyのJSON型フィールドの変更を明示的にマーク
+        from sqlalchemy.orm.attributes import flag_modified
+        message.message_metadata = metadata
+        flag_modified(message, "message_metadata")
+        
+        await db.commit()
+        await db.refresh(message)
+        
+        logger.info(f"[DB UPDATE] Successfully updated message {message_id}, new metadata: {message.message_metadata}")
+    else:
+        logger.warning(f"[DB UPDATE] Message {message_id} not found in database")
+    
+    return message
+
+
+async def get_message_by_id_async(
+    db: AsyncSession,
+    message_id: str
+) -> Optional[ChatMessage]:
+    """
+    メッセージIDでメッセージを取得
+    
+    Args:
+        db: データベースセッション
+        message_id: メッセージID
+        
+    Returns:
+        ChatMessageオブジェクト
+    """
+    result = await db.execute(
+        select(ChatMessage).where(ChatMessage.message_id == message_id)
+    )
+    return result.scalar_one_or_none()

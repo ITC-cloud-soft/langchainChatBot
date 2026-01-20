@@ -17,6 +17,8 @@ interface ChatMessagesProps {
   selectedSession: any;
   useVirtualization?: boolean;
   estimatedItemSize?: number;
+  onFlowExecuted?: (result: any) => void;
+  onSendMessage?: (message: string) => void;
 }
 
 export const ChatMessages: React.FC<ChatMessagesProps> = ({
@@ -25,10 +27,20 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
   selectedSession,
   useVirtualization = false,
   estimatedItemSize = 120,
+  onFlowExecuted,
+  onSendMessage,
 }) => {
   const theme = useTheme();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // EXECUTE_FLOWメッセージをフィルタリング（技術的なメッセージなので表示しない）
+  const filteredMessages = messages.filter(msg => {
+    if (msg.role === 'user' && msg.content.startsWith('EXECUTE_FLOW:')) {
+      return false; // EXECUTE_FLOWメッセージは表示しない
+    }
+    return true;
+  });
 
   // 自動スクロール機能
   const scrollToBottom = () => {
@@ -218,11 +230,12 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
         scrollBehavior: 'smooth',
       }}
     >
-      {messages.map((message, index) => (
+      {filteredMessages.map((message, index) => (
         <OptimizedChatMessage
           key={`${message.timestamp}-${index}`}
           message={message}
           isLast={index === messages.length - 1}
+          onSendMessage={onSendMessage}
         />
       ))}
       {/* 自動スクロール用のダミー要素 */}

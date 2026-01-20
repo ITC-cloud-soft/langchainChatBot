@@ -129,6 +129,8 @@ export const useChatPageHandlers = (chatPageState: any, chatState: any) => {
                 role: msg.role,
                 content: msg.content,
                 timestamp: msg.timestamp,
+                message_id: msg.message_id,
+                metadata: msg.metadata,
                 sourceDocuments: msg.source_documents,
               }))
             : [];

@@ -41,13 +41,14 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
     last_login = Column(DateTime, nullable=True)
     extra_metadata = Column(JSON, nullable=True)
     
     # Relationships
     chat_sessions = relationship("ChatSession", back_populates="user", foreign_keys="ChatSession.user_id_int")
+    ars_tokens = relationship("ApiArsToken", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
@@ -120,3 +121,119 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+class ApiArsToken(Base):
+    """
+    ARS API Token model for storing user-specific ARS API keys
+    """
+    __tablename__ = "api_ars_tokens"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_type = Column(String(16), nullable=False, default="token")
+    token = Column(String(255), nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    
+    # Relationship
+    user = relationship("User", back_populates="ars_tokens")
+    
+    def __repr__(self):
+        return f"<ApiArsToken(id={self.id}, user_id={self.user_id}, type='{self.token_type}')>"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary"""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "token_type": self.token_type,
+            "token": self.token,
+            "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+# Utility functions for ARS token operations
+
+async def get_ars_token_by_user(db: AsyncSession, user_id: int) -> Optional[ApiArsToken]:
+    """Get ARS token by user ID"""
+    result = await db.execute(
+        select(ApiArsToken).where(ApiArsToken.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_or_update_ars_token(
+    db: AsyncSession,
+    user_id: int,
+    token: str,
+    token_type: str = "token"
+) -> ApiArsToken:
+    """Create or update ARS token for a user"""
+    existing_token = await get_ars_token_by_user(db, user_id)
+    
+    if existing_token:
+        existing_token.token = token
+        existing_token.last_used_at = datetime.now()
+        existing_token.token_type = token_type
+    else:
+        existing_token = ApiArsToken(
+            user_id=user_id,
+            token=token,
+            token_type=token_type,
+            last_used_at=datetime.now()
+        )
+        db.add(existing_token)
+    
+    await db.commit()
+    await db.refresh(existing_token)
+    return existing_token
+
+
+class ArsSystemPrompt(Base):
+    """ARS System Prompt Model - stores system prompts fetched from ARS"""
+    __tablename__ = "ars_system_prompts"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, unique=True)
+    prompt = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    
+    user = relationship("User", back_populates="ars_system_prompt")
+
+
+# Update User model relationship
+User.ars_system_prompt = relationship("ArsSystemPrompt", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+
+async def get_ars_system_prompt_by_user(db: AsyncSession, user_id: int) -> Optional[ArsSystemPrompt]:
+    """Get ARS system prompt for a user"""
+    result = await db.execute(
+        select(ArsSystemPrompt).where(ArsSystemPrompt.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_or_update_ars_system_prompt(
+    db: AsyncSession,
+    user_id: int,
+    prompt: str
+) -> ArsSystemPrompt:
+    """Create or update ARS system prompt for a user"""
+    existing_prompt = await get_ars_system_prompt_by_user(db, user_id)
+    
+    if existing_prompt:
+        existing_prompt.prompt = prompt
+        existing_prompt.updated_at = datetime.now()
+    else:
+        existing_prompt = ArsSystemPrompt(
+            user_id=user_id,
+            prompt=prompt
+        )
+        db.add(existing_prompt)
+    
+    await db.commit()
+    await db.refresh(existing_prompt)
+    return existing_prompt

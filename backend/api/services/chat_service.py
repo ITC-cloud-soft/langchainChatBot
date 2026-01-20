@@ -13,6 +13,7 @@ from datetime import datetime
 
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA, ConversationalRetrievalChain
 from langchain.prompts import PromptTemplate
 from langchain.callbacks.base import BaseCallbackHandler
@@ -125,7 +126,15 @@ class ChatService(BaseService):
             
             self.log_info(f"Initializing LLM with provider: {provider}, model: {model_name}, api_base: {api_base}")
             
-            if provider == "anthropic":
+            if provider == "gemini":
+                self.log_info("Creating ChatGoogleGenerativeAI instance")
+                self.llm = ChatGoogleGenerativeAI(
+                    google_api_key=api_key,
+                    model=model_name,
+                    temperature=temperature,
+                    streaming=True
+                )
+            elif provider == "anthropic":
                 self.log_info("Creating ChatAnthropic instance")
                 self.llm = ChatAnthropic(
                     anthropic_api_key=api_key,
@@ -200,8 +209,10 @@ class ChatService(BaseService):
         if include_prompt:
             # カスタムシステムプロンプトが指定されている場合はそれを使用
             if system_prompt:
+                # システムプロンプト内の波括弧をエスケープ（PromptTemplateが変数として解釈しないように）
+                escaped_system_prompt = system_prompt.replace("{", "{{").replace("}", "}}")
                 # システムプロンプトを既存のテンプレートに統合
-                custom_template = f"{system_prompt}\n\n{self._get_prompt_template()}"
+                custom_template = f"{escaped_system_prompt}\n\n{self._get_prompt_template()}"
                 prompt = PromptTemplate(
                     template=custom_template,
                     input_variables=["chat_history", "context", "question"]
@@ -460,7 +471,8 @@ class ChatService(BaseService):
         self,
         message: str,
         session_id: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        ars_token: Optional[str] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream a chat response"""
         self.ensure_initialized()
@@ -569,6 +581,178 @@ class ChatService(BaseService):
                 full_response = "".join(tokens)
                 self.log_info(f"Generated {len(tokens)} tokens, response: {full_response[:100]}...")
                 
+                # 表単メッセージのメタデータを初期化
+                form_metadata = None
+                
+                # ReAct解析: 检测JSON格式的flow调用,返回参数表单
+                if ars_token and full_response:
+                    import re
+                    
+                    # 首先检查用户是否提交了Flow参数 (格式: EXECUTE_FLOW:flow_id:message_id:params_json)
+                    param_submit_pattern = r'EXECUTE_FLOW:(\d+):([^:]+):(.+)'
+                    param_match = re.search(param_submit_pattern, message)
+                    
+                    if param_match:
+                        # 用户提交了参数,直接执行Flow
+                        flow_id = param_match.group(1)
+                        form_message_id = param_match.group(2)
+                        params_json = param_match.group(3)
+                        
+                        try:
+                            params = json.loads(params_json)
+                            self.log_info(f"[ARS REACT] User submitted params for flow {flow_id}, message_id: {form_message_id}, params: {params}")
+                            
+                            # 更新表单状态为 'submitted'（使用消息中提供的message_id）
+                            if form_message_id and form_message_id != 'undefined':
+                                try:
+                                    from api.models.database import update_message_form_status_async
+                                    from api.core.database import database_manager
+                                    
+                                    async with database_manager.get_session() as db_session:
+                                        await update_message_form_status_async(
+                                            db=db_session,
+                                            message_id=form_message_id,
+                                            form_status='submitted',
+                                            form_data=params
+                                        )
+                                    self.log_info(f"Updated form status to 'submitted' for message {form_message_id}")
+                                except Exception as e:
+                                    self.log_warning(f"Failed to update form status: {str(e)}")
+                            
+                            from api.tools.ars_tools import ExecuteFlowTool
+                            tool = ExecuteFlowTool(ars_token=ars_token)
+                            result_str = await tool._arun(flow_id=flow_id, parameters=params)
+                            result = json.loads(result_str)
+                            
+                            if result.get("success"):
+                                # 格式化执行结果
+                                result_data = result.get('result', {})
+                                result_data_obj = result_data.get('result_data', {})
+                                
+                                # 构建美观的结果显示
+                                formatted_result = f"✅ **Flow {flow_id} 実行成功!**\n\n"
+                                
+                                # 遍历result_data中的每个flow步骤
+                                for flow_name, steps in result_data_obj.items():
+                                    formatted_result += f"### 📋 {flow_name}\n\n"
+                                    
+                                    if isinstance(steps, list):
+                                        for idx, step in enumerate(steps, 1):
+                                            for step_name, step_data in step.items():
+                                                status = step_data.get('result', 'unknown')
+                                                
+                                                if status == 'success':
+                                                    formatted_result += f"**ステップ {idx}: {step_name}** ✅\n"
+                                                    if 'data' in step_data:
+                                                        formatted_result += f"- WorkID: `{step_data['data'].get('WorkID', 'N/A')}`\n"
+                                                        formatted_result += f"- FK_Node: `{step_data['data'].get('FK_Node', 'N/A')}`\n"
+                                                elif status == 'error':
+                                                    formatted_result += f"**ステップ {idx}: {step_name}** ❌\n"
+                                                    formatted_result += f"- エラーコード: `{step_data.get('msgcode', 'N/A')}`\n"
+                                                    formatted_result += f"- エラーメッセージ: {step_data.get('messages', 'Unknown error')}\n"
+                                                
+                                                if 'ts' in step_data:
+                                                    formatted_result += f"- 実行時刻: {step_data['ts']}\n"
+                                                formatted_result += "\n"
+                                
+                                # 添加原始数据的折叠部分
+                                formatted_result += "\n<details>\n<summary>📊 詳細データを表示</summary>\n\n"
+                                formatted_result += f"```json\n{json.dumps(result_data, ensure_ascii=False, indent=2)}\n```\n"
+                                formatted_result += "</details>"
+                                
+                                full_response = formatted_result
+                            else:
+                                full_response = f"❌ **Flow {flow_id}** 実行失敗: {result.get('error')}"
+                        except Exception as e:
+                            self.log_error(f"[ARS REACT] Error executing flow with params", e)
+                            full_response = f"❌ パラメータ処理エラー: {str(e)}"
+                    else:
+                        # 检测JSON格式: {"id": "X", "type": "flow", "name": "..."}
+                        # 只处理type为flow的情况,忽略tool类型
+                        pattern = r'\{\s*"id"\s*:\s*"?(\d+)"?\s*,\s*"type"\s*:\s*"flow"'
+                        match = re.search(pattern, full_response)
+                    
+                    if not param_match and match:
+                        flow_id = match.group(1)
+                        self.log_info(f"[ARS REACT] Detected flow ID {flow_id}, fetching params")
+                        
+                        try:
+                            # 获取Flow的参数定义
+                            from api.services.providers.ars_provider import ARSServiceProvider
+                            import os
+                            
+                            ars_endpoint = os.getenv("ARS_API_ENDPOINT", "http://ars-backend:5001")
+                            provider = ARSServiceProvider(api_endpoint=ars_endpoint)
+                            provider.set_api_key(ars_token)
+                            
+                            context = {"ars_token": ars_token}
+                            
+                            # 获取Flow名称
+                            flows = await provider.get_tools(context)
+                            flow_name = None
+                            for flow in flows:
+                                if str(flow.get("id")) == str(flow_id):
+                                    flow_name = flow.get("name")
+                                    break
+                            
+                            # 获取参数定义
+                            params_result = await provider.get_flow_params(flow_id, context)
+                            
+                            if params_result.get("success"):
+                                params = params_result.get("params", [])
+                                
+                                if params:
+                                    # 有参数需要填写,返回表单
+                                    full_response = f"📋 **{flow_name or f'Flow {flow_id}'}** を実行します\n\n"
+                                    full_response += "以下のパラメータを入力してください:\n\n"
+                                    
+                                    for param in params:
+                                        param_name = param.get("api_param_name")
+                                        param_type = param.get("param_type")
+                                        
+                                        full_response += f"- **{param_name}** ({param_type})"
+                                        
+                                        # オプション型の場合、選択肢を表示
+                                        if param_type == "option" and param.get("option"):
+                                            full_response += "\n  選択肢:\n"
+                                            for opt in param["option"]:
+                                                full_response += f"  - {opt['option_label']} ({opt['option_value']})\n"
+                                        else:
+                                            full_response += "\n"
+                                    
+                                    # メタデータとして flow_id と params を埋め込む
+                                    full_response += f"\n---\n**Flow ID**: {flow_id}\n"
+                                    full_response += "パラメータを入力後、再度送信してください。"
+                                    
+                                    # 表単メッセージのメタデータを設定（初期状態: pending）
+                                    form_metadata = {
+                                        "form_status": "pending",
+                                        "flow_id": flow_id,
+                                        "flow_name": flow_name,
+                                        "params": params  # パラメータ定義も保存
+                                    }
+                                    
+                                    self.log_info(f"[ARS REACT] Returned param form for flow {flow_id}")
+                                else:
+                                    # パラメータ不要、直接実行
+                                    from api.tools.ars_tools import ExecuteFlowTool
+                                    tool = ExecuteFlowTool(ars_token=ars_token)
+                                    result_str = await tool._arun(flow_id=flow_id)
+                                    result = json.loads(result_str)
+                                    
+                                    if result.get("success"):
+                                        full_response = f"✅ **{flow_name or f'Flow {flow_id}'}** 実行成功!\n\n実行結果:\n```json\n{json.dumps(result.get('result'), ensure_ascii=False, indent=2)}\n```"
+                                    else:
+                                        full_response = f"❌ **{flow_name or f'Flow {flow_id}'}** 実行失敗: {result.get('error')}"
+                                    
+                                    self.log_info(f"[ARS REACT] Flow {flow_id} executed (no params required)")
+                            else:
+                                full_response = f"❌ Flow {flow_id} のパラメータ取得に失敗しました: {params_result.get('error')}"
+                            
+                        except Exception as e:
+                            self.log_error(f"[ARS REACT] Error processing flow {flow_id}", e)
+                            full_response = f"❌ Flow {flow_id} の処理中にエラーが発生しました: {str(e)}"
+                
                 if full_response:
                     # トークンを1文字ずつストリーミング
                     for i, char in enumerate(full_response):
@@ -591,34 +775,44 @@ class ChatService(BaseService):
                         }
                     full_response = fallback_response
                 
-                # Send final response with source documents
-                yield {
-                    "type": "final",
-                    "response": full_response,
-                    "source_documents": source_documents,
-                    "session_id": session_id
-                }
-                
-                # Add bot response to history
-                assistant_message_data = {
-                    "role": "assistant",
-                    "content": full_response,
-                    "timestamp": datetime.now().isoformat(),
-                    "source_documents": source_documents
-                }
-                self.chat_history[session_id].append(assistant_message_data)
-                
-                # Save assistant message to database
+                # Save assistant message to database first to get message_id
+                saved_message = None
                 try:
-                    await chat_history_service.add_message(
+                    # 表単メッセージの場合はmetadataを含める
+                    self.log_info(f"Saving assistant message with metadata: {form_metadata}")
+                    
+                    saved_message = await chat_history_service.add_message(
                         session_id=session_id,
                         role="assistant",
                         content=full_response,
                         message_type="text",
-                        source_documents=source_documents
+                        source_documents=source_documents,
+                        metadata=form_metadata
                     )
+                    self.log_info(f"Saved message with ID: {saved_message.get('message_id') if saved_message else 'None'}")
                 except Exception as e:
                     self.log_warning(f"Failed to save assistant message to database: {str(e)}")
+                
+                # Send final response with source documents and message_id
+                yield {
+                    "type": "final",
+                    "response": full_response,
+                    "source_documents": source_documents,
+                    "session_id": session_id,
+                    "message_id": saved_message.get("message_id") if saved_message else None,
+                    "metadata": form_metadata
+                }
+                
+                # Add bot response to history with message_id and metadata
+                assistant_message_data = {
+                    "role": "assistant",
+                    "content": full_response,
+                    "timestamp": datetime.now().isoformat(),
+                    "source_documents": source_documents,
+                    "message_id": saved_message.get("message_id") if saved_message else None,
+                    "metadata": form_metadata
+                }
+                self.chat_history[session_id].append(assistant_message_data)
                 
                 # Update cache
                 self._update_history_cache(session_id)
@@ -697,6 +891,11 @@ class ChatService(BaseService):
                         "content": msg["content"],
                         "timestamp": msg["timestamp"]
                     }
+                    # message_idとmetadataを含める（フォーム状態の復元に必要）
+                    if msg.get("message_id"):
+                        message_data["message_id"] = msg["message_id"]
+                    if msg.get("metadata"):
+                        message_data["metadata"] = msg["metadata"]
                     if msg.get("source_documents"):
                         message_data["source_documents"] = msg["source_documents"]
                     if msg.get("error_info"):

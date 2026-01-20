@@ -4,6 +4,10 @@ import { logger } from '../utils/logger';
 // API base URL - in development, this will be proxied to the backend
 const API_BASE_URL = (import.meta as any).env.VITE_API_URL ?? 'http://localhost:8000';
 
+// Test timeout for LLM/Embedding config tests (in milliseconds)
+// Default: 120 seconds for local models that may take time to start
+const TEST_TIMEOUT = parseInt((import.meta as any).env.VITE_TEST_TIMEOUT ?? '120000', 10);
+
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -43,13 +47,8 @@ api.interceptors.response.use(
       const { status, data } = error.response;
 
       // Handle specific error status codes
-      if (status === 401) {
-        // Unauthorized - clear tokens and redirect to login
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('auth_token'); // legacy
-        window.location.href = '/login';
-      } else if (status === 403) {
+      // Note: 401 is handled by authService's interceptor for token refresh
+      if (status === 403) {
         // Forbidden - insufficient permissions
         logger.error('Forbidden: Insufficient permissions');
       } else if (status === 404) {
@@ -114,7 +113,8 @@ interface SendMessageResponse {
 
 interface ChatHistoryResponse {
   session_id: string;
-  messages: ChatMessage[];
+  messages?: ChatMessage[];
+  history?: ChatMessage[];
   total: number;
 }
 
@@ -213,8 +213,8 @@ export const chatApi = {
       headers: {
         'Content-Type': 'application/json',
         // Add auth token if available
-        ...(localStorage.getItem('auth_token')
-          ? { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+        ...(localStorage.getItem('access_token')
+          ? { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
           : {}),
       },
       body: JSON.stringify({
@@ -229,6 +229,7 @@ export const chatApi = {
 
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
 
     return {
       async *[Symbol.asyncIterator]() {
@@ -240,18 +241,23 @@ export const chatApi = {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += chunk;
+            const lines = buffer.split('\n');
+            
+            // 最後の行が不完全な可能性があるため、バッファに保持
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
               if (line.startsWith('data: ')) {
-                const data = line.slice(6);
+                const data = line.slice(6).trim();
                 if (data === '[DONE]') break;
+                if (!data) continue;
 
                 try {
                   const parsed = JSON.parse(data);
                   yield parsed;
                 } catch (e) {
-                  logger.error('Error parsing SSE data:', e);
+                  logger.error('Error parsing SSE data:', e, 'Data:', data);
                 }
               }
             }
@@ -394,7 +400,9 @@ export const llmConfigApi = {
   },
 
   testConfig: async (config: Record<string, unknown>) => {
-    const response = await api.post('/api/llm/config/test', config);
+    const response = await api.post('/api/llm/config/test', config, {
+      timeout: TEST_TIMEOUT,
+    });
     return response.data;
   },
 
@@ -454,7 +462,9 @@ export const embeddingConfigApi = {
   },
 
   testConfig: async (config: Record<string, unknown>) => {
-    const response = await api.post('/api/embedding/config/test', config);
+    const response = await api.post('/api/embedding/config/test', config, {
+      timeout: TEST_TIMEOUT,
+    });
     return response.data;
   },
 

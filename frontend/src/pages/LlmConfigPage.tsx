@@ -118,10 +118,10 @@ const LlmConfigPage: React.FC = () => {
         api_key: 'nokey',
         model_name: 'gpt-3.5-turbo',
         temperature: 0.7,
-        max_tokens: 128000,
-        top_p: 1.0,
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
+        max_tokens: 1024,
+        top_p: 0.9,
+        frequency_penalty: 0.2,
+        presence_penalty: 0.1,
       });
     } finally {
       setIsLoading(false);

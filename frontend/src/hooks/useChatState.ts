@@ -5,6 +5,8 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  message_id?: string;
+  metadata?: Record<string, any>;
   sourceDocuments?: Array<{
     content: string;
     metadata: Record<string, unknown>;

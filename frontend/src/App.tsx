@@ -12,6 +12,7 @@ import ChatPage from './pages/ChatPage';
 import LlmConfigPage from './pages/LlmConfigPage';
 import KnowledgePage from './pages/KnowledgePage';
 import UserManagementPage from './pages/UserManagementPage';
+import ArsConfigPage from './pages/ArsConfigPage';
 
 // アプリケーションテーマの作成
 const theme = createAppTheme('light');
@@ -77,6 +78,14 @@ function App() {
                           element={
                             <PrivateRoute requireAdmin>
                               <UserManagementPage />
+                            </PrivateRoute>
+                          }
+                        />
+                        <Route
+                          path="/ars-settings"
+                          element={
+                            <PrivateRoute requireAdmin>
+                              <ArsConfigPage />
                             </PrivateRoute>
                           }
                         />

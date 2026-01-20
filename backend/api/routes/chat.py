@@ -13,10 +13,14 @@ from pydantic import BaseModel, field_validator
 import json
 
 from api.core.qdrant_manager import qdrant_manager
-from api.core.database import database_manager
+from api.core.database import database_manager, get_db_session
 from api.core.utils import handle_exceptions, default_logger, format_success_response
 from api.services.chat_service import chat_service
 from api.services.chat_history_service import chat_history_service
+from api.middleware import CurrentUser, get_current_user, get_optional_current_user
+from api.models.user import get_ars_system_prompt_by_user
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
 
 # Create router
 router = APIRouter()
@@ -91,40 +95,88 @@ class ChatHistoryResponse(BaseModel):
 # Chat service is already initialized in main.py
 
 @router.post("/send", response_model=ChatResponse)
-async def send_message(chat_message: ChatMessage):
+async def send_message(
+    chat_message: ChatMessage,
+    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)]
+):
     """Send a message to the chatbot and get a response"""
     try:
         # Debug logging
         default_logger.info(f"Received send request: message='{chat_message.message}', session_id='{chat_message.session_id}'")
         
+        # Get ARS system prompt from database if not provided and user is authenticated
+        system_prompt = chat_message.system_prompt
+        if not system_prompt and current_user:
+            ars_prompt = await get_ars_system_prompt_by_user(db, current_user.user_id)
+            if ars_prompt:
+                system_prompt = ars_prompt.prompt
+                default_logger.info(f"Using ARS system prompt for user {current_user.user_id}")
+        
         # Process message through chat service
         response = await chat_service.process_message(
             message=chat_message.message,
             session_id=chat_message.session_id,
-            system_prompt=chat_message.system_prompt
+            system_prompt=system_prompt
         )
         
-        return ChatResponse(
-            response=response["response"],
-            source_documents=[{"content": doc.get("content"), "metadata": doc.get("metadata")} for doc in response.get("source_documents", [])] if response.get("source_documents") else [],
-            session_id=response["session_id"]
-        )
+        return ChatResponse(**response)
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/stream")
-async def stream_message(chat_message: ChatMessage):
+async def stream_message(
+    chat_message: ChatMessage,
+    current_user: Annotated[Optional[CurrentUser], Depends(get_optional_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)]
+):
     """Stream a chatbot response"""
     # Debug logging
     default_logger.info(f"Received stream request: message='{chat_message.message}', session_id='{chat_message.session_id}'")
+    
+    # Get ARS system prompt from database if not provided and user is authenticated
+    system_prompt = chat_message.system_prompt
+    ars_token = None
+    
+    default_logger.info(f"[ARS DEBUG] stream - current_user: {current_user}, system_prompt from request: {system_prompt}")
+    if not system_prompt and current_user:
+        default_logger.info(f"[ARS DEBUG] Fetching ARS prompt for user {current_user.user_id}")
+        ars_prompt = await get_ars_system_prompt_by_user(db, current_user.user_id)
+        default_logger.info(f"[ARS DEBUG] ARS prompt fetched: {ars_prompt}")
+        if ars_prompt:
+            system_prompt = ars_prompt.prompt
+            default_logger.info(f"[ARS DEBUG] Using ARS system prompt for user {current_user.user_id} in stream")
+            default_logger.info(f"[ARS DEBUG] System prompt length: {len(system_prompt)} chars")
+        else:
+            default_logger.info(f"[ARS DEBUG] No ARS prompt found for user {current_user.user_id}")
+    else:
+        default_logger.info(f"[ARS DEBUG] Skipping ARS prompt fetch - system_prompt: {bool(system_prompt)}, current_user: {bool(current_user)}")
+    
+    # Get ARS token for flow execution
+    if current_user:
+        from api.models.user import get_ars_token_by_user
+        ars_token_obj = await get_ars_token_by_user(db, current_user.user_id)
+        if ars_token_obj:
+            ars_token = ars_token_obj.token
+            default_logger.info(f"[ARS DEBUG] ARS token retrieved for user {current_user.user_id}")
     
     async def generate():
         async for chunk in chat_service.stream_message(
             message=chat_message.message,
             session_id=chat_message.session_id,
-            system_prompt=chat_message.system_prompt
+            system_prompt=system_prompt,
+            ars_token=ars_token
         ):
-            yield f"data: {json.dumps(chunk)}\n\n"
+            try:
+                # JSONシリアライズ時に適切なエンコーディングを保証
+                json_str = json.dumps(chunk, ensure_ascii=False, separators=(',', ':'))
+                yield f"data: {json_str}\n\n"
+            except Exception as e:
+                default_logger.error(f"JSON serialization error: {str(e)}, chunk: {chunk}")
+                # エラー時はエラーメッセージを返す
+                error_chunk = {"type": "error", "error": str(e)}
+                yield f"data: {json.dumps(error_chunk)}\n\n"
     
     return StreamingResponse(
         generate(),
@@ -381,13 +433,108 @@ async def chat_health_check():
             "status": overall_status,
             "chat_service": chat_health,
             "database": db_health,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
         return {
             "status": "unhealthy",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
+
+
+class FormStatusUpdate(BaseModel):
+    """表単状態更新リクエスト"""
+    form_status: str
+    form_data: Optional[Dict[str, Any]] = None
+    execution_result: Optional[Dict[str, Any]] = None
+
+
+@router.patch("/messages/{message_id}/form-status")
+async def update_message_form_status(
+    message_id: str,
+    update_data: FormStatusUpdate,
+    db: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    表単メッセージの状態を更新
+    
+    Args:
+        message_id: メッセージID
+        update_data: 更新データ
+        db: データベースセッション
+        
+    Returns:
+        更新されたメッセージ情報
+    """
+    try:
+        from api.models.database import update_message_form_status_async
+        
+        default_logger.info(
+            f"Updating form status for message {message_id}: {update_data.form_status}"
+        )
+        
+        message = await update_message_form_status_async(
+            db=db,
+            message_id=message_id,
+            form_status=update_data.form_status,
+            form_data=update_data.form_data,
+            execution_result=update_data.execution_result
+        )
+        
+        if not message:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Message {message_id} not found"
+            )
+        
+        return format_success_response(
+            data=message.to_dict(),
+            message="Form status updated successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        default_logger.error(f"Error updating form status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/messages/{message_id}")
+async def get_message(
+    message_id: str,
+    db: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    メッセージIDでメッセージを取得
+    
+    Args:
+        message_id: メッセージID
+        db: データベースセッション
+        
+    Returns:
+        メッセージ情報
+    """
+    try:
+        from api.models.database import get_message_by_id_async
+        
+        message = await get_message_by_id_async(db, message_id)
+        
+        if not message:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Message {message_id} not found"
+            )
+        
+        return format_success_response(
+            data=message.to_dict(),
+            message="Message retrieved successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        default_logger.error(f"Error retrieving message: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 

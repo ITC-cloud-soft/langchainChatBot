@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import routers
-from api.routes import chat, llm_config, knowledge, config, embedding_config, auth, users
+from api.routes import chat, llm_config, knowledge, config, embedding_config, auth, users, ars_settings
 from api.core.config_manager import settings
 from api.core.config_watcher import config_updater
 from api.core.database import initialize_database_on_startup, cleanup_database_on_shutdown, database_manager, check_database_health
@@ -88,8 +88,27 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning(f"Service '{service_name}' initialization failed")
     
+    # Start ARS scheduler if database is initialized
+    if db_initialized:
+        try:
+            from api.tasks.ars_scheduler import start_ars_scheduler
+            # Update system prompts every 30 minutes
+            update_interval = int(os.getenv("ARS_UPDATE_INTERVAL_MINUTES", "30"))
+            start_ars_scheduler(update_interval_minutes=update_interval)
+            logger.info(f"ARS scheduler started with {update_interval} minute interval")
+        except Exception as e:
+            logger.warning(f"Failed to start ARS scheduler: {e}")
+    
     yield
     # Shutdown
+    # Stop ARS scheduler
+    try:
+        from api.tasks.ars_scheduler import stop_ars_scheduler
+        stop_ars_scheduler()
+        logger.info("ARS scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error stopping ARS scheduler: {e}")
+    
     # Cleanup database connections
     try:
         await cleanup_database_on_shutdown()
@@ -129,6 +148,7 @@ app.include_router(llm_config.router, prefix="/api/llm", tags=["llm-config"])
 app.include_router(embedding_config.router, prefix="/api/embedding", tags=["embedding-config"])
 app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
+app.include_router(ars_settings.router, prefix="/api", tags=["ars-settings"])
 
 # Mount static files for uploads
 if not os.path.exists(settings.UPLOAD_DIR):

@@ -94,13 +94,17 @@ def setup_logging(
     
     logger = logging.getLogger(name)
     logger.setLevel(level)
+    logger.propagate = False  # 親loggerへの伝播を防止し、重複出力を回避
     
-    # ハンドラーが既に存在する場合は追加しない
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(format_string)
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+    # 既存のハンドラーをクリアして重複追加を防止
+    if logger.handlers:
+        logger.handlers.clear()
+    
+    # 新しいハンドラーを追加
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(format_string)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
     
     return logger
 

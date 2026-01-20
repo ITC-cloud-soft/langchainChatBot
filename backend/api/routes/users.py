@@ -275,7 +275,7 @@ async def update_user(
     if user_data.is_active is not None:
         user.is_active = user_data.is_active
     
-    user.updated_at = datetime.utcnow()
+    user.updated_at = datetime.now()
     
     await db.commit()
     await db.refresh(user)

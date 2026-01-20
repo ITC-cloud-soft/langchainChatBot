@@ -1,5 +1,5 @@
 # マルチステージビルドを使用した最適化されたDockerfile
-FROM node:16-alpine AS builder
+FROM node:20-alpine AS builder
 
 # 環境変数の設定
 ENV NODE_ENV=production
@@ -9,7 +9,7 @@ WORKDIR /app
 
 # 依存関係のコピーとインストール
 COPY package*.json pnpm-lock.yaml ./
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+RUN npm install -g pnpm && pnpm install --no-frozen-lockfile
 
 # ソースコードのコピー
 COPY . .

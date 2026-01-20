@@ -96,7 +96,19 @@ async def run_async_migrations() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     
-    asyncio.run(run_async_migrations())
+    try:
+        # Try to get existing event loop
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If loop is already running, create a task
+            import nest_asyncio
+            nest_asyncio.apply()
+            loop.run_until_complete(run_async_migrations())
+        else:
+            loop.run_until_complete(run_async_migrations())
+    except RuntimeError:
+        # No event loop, create new one
+        asyncio.run(run_async_migrations())
 
 
 if context.is_offline_mode():

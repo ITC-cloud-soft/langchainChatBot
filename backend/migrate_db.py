@@ -10,6 +10,7 @@ import sys
 import os
 import argparse
 import asyncio
+import logging
 from pathlib import Path
 
 # Add the project root to the Python path
@@ -21,12 +22,20 @@ try:
     from alembic.config import Config
     from api.core.database import database_manager
 except ImportError as e:
+    print(f"ERROR: Failed to import required modules: {e}")
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
 
 
 def get_alembic_config():
     """Get Alembic configuration"""
-    config_file = project_root / "alembic.ini"
+    # Try current directory first (for Docker container)
+    config_file = Path(__file__).parent / "alembic.ini"
+    if not config_file.exists():
+        # Fallback to project root
+        config_file = project_root / "alembic.ini"
+    
     if not config_file.exists():
         raise FileNotFoundError(f"Alembic configuration file not found: {config_file}")
     
@@ -36,36 +45,55 @@ def get_alembic_config():
 
 async def run_migration(args):
     """Run database migration"""
+    logger = logging.getLogger(__name__)
+    
     try:
         # Initialize database manager first
+        logger.info("Initializing database manager...")
         if not await database_manager.initialize():
+            logger.error("Failed to initialize database manager")
             return False
         
+        logger.info("Database manager initialized successfully")
+        
         # Get Alembic config
+        logger.info("Loading Alembic configuration...")
         config = get_alembic_config()
         
         if args.command == "upgrade":
+            logger.info(f"Running upgrade to revision: {args.revision or 'head'}")
             command.upgrade(config, args.revision or "head")
+            logger.info("Upgrade completed successfully")
             
         elif args.command == "downgrade":
+            logger.info(f"Running downgrade to revision: {args.revision or '-1'}")
             command.downgrade(config, args.revision or "-1")
+            logger.info("Downgrade completed successfully")
             
         elif args.command == "current":
+            logger.info("Showing current revision...")
             command.current(config, verbose=True)
             
         elif args.command == "history":
+            logger.info("Showing migration history...")
             command.history(config, verbose=True)
             
         elif args.command == "revision":
+            logger.info(f"Creating new revision: {args.message}")
             command.revision(
                 config,
                 message=args.message,
                 autogenerate=args.autogenerate
             )
+            logger.info("Revision created successfully")
             
         return True
         
     except Exception as e:
+        logger.error(f"Migration failed with error: {e}", exc_info=True)
+        print(f"ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         return False
     finally:
         # Cleanup database connections

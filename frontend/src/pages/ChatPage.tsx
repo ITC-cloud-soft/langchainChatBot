@@ -180,6 +180,31 @@ const ChatPage: React.FC = () => {
     }
   }, [inputMessage, sendStreamingMessage, clearInputMessage, setInputMessage]);
 
+  // 直接メッセージを送信する関数（入力ボックスを経由しない）
+  const handleSendDirectMessage = useCallback(async (message: string, options?: { silent?: boolean }) => {
+    if (!message?.trim()) return;
+
+    console.log('Sending direct message:', message);
+
+    try {
+      // EXECUTE_FLOW メッセージの場合は、ユーザーメッセージを履歴に追加しない
+      const isExecuteFlow = message.startsWith('EXECUTE_FLOW:');
+      
+      if (isExecuteFlow && options?.silent !== false) {
+        // サイレントモード: ユーザーメッセージを表示せずに送信
+        // バックエンドに送信するが、チャット履歴には追加しない
+        await sendStreamingMessage(message);
+      } else {
+        // 通常モード: メッセージを送信
+        await sendStreamingMessage(message);
+      }
+      
+      console.log('Direct message sent successfully');
+    } catch (error) {
+      console.error('Error sending direct message:', error);
+    }
+  }, [sendStreamingMessage]);
+
   // セッション検索処理
   const handleSearchLocal = useCallback(async () => {
     if (!searchQuery?.trim()) return;
@@ -214,9 +239,64 @@ const ChatPage: React.FC = () => {
       }
     };
 
+    // sessionIdをlocalStorageから復元、なければ新規作成
+    const storedSessionId = localStorage.getItem('currentSessionId');
+    const currentSessionId = storedSessionId || `session_${Date.now()}`;
+    
+    if (!storedSessionId) {
+      localStorage.setItem('currentSessionId', currentSessionId);
+    }
+    
+    actions.setSessionId(currentSessionId);
     initializeSessions();
-    actions.setSessionId(`session_${Date.now()}`);
+    
+    // 既存のsessionIdの場合、履歴をロード
+    if (storedSessionId) {
+      loadChatHistory(storedSessionId);
+    }
   }, []);
+
+  // チャット履歴をロードする関数
+  const loadChatHistory = async (sessionId: string) => {
+    try {
+      actions.setLoading(true);
+      const response = await chatApi.getChatHistory(sessionId);
+      
+      console.log('[ChatPage] API response:', response);
+      console.log('[ChatPage] response.data:', response.data);
+      
+      // APIは "history" フィールドでメッセージを返す
+      const messages = response.data.history || response.data.messages || [];
+      
+      console.log('[ChatPage] messages from API:', messages);
+      console.log('[ChatPage] First message:', messages[0]);
+      
+      if (response.success && messages.length > 0) {
+        const historyMessages = messages.map((msg: any) => ({
+          id: msg.message_id || msg.id || `msg_${Date.now()}_${Math.random()}`,
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp,
+          message_id: msg.message_id,
+          metadata: msg.metadata,
+          sourceDocuments: msg.source_documents || msg.sourceDocuments,
+        }));
+        
+        actions.setMessages(historyMessages);
+        console.log('Loaded chat history:', historyMessages.length, 'messages');
+        console.log('Messages with metadata:', historyMessages.filter((m: any) => m.metadata).map((m: any) => ({
+          id: m.message_id,
+          role: m.role,
+          metadata: m.metadata
+        })));
+        console.log('Sample message structure:', historyMessages[0]);
+      }
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
+    } finally {
+      actions.setLoading(false);
+    }
+  };
 
   return (
     <Box
@@ -245,6 +325,7 @@ const ChatPage: React.FC = () => {
             selectedSession={selectedSession}
             useVirtualization={useVirtualization}
             estimatedItemSize={estimatedItemSize}
+            onSendMessage={handleSendDirectMessage}
           />
         }
         input={

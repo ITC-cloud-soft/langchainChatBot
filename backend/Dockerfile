@@ -1,10 +1,9 @@
 # マルチステージビルドを使用した最適化されたDockerfile
-FROM python:3.9-slim as builder
+FROM python:3.11-slim as builder
 
 # 環境変数の設定
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # システムパッケージのインストール
@@ -17,24 +16,31 @@ RUN apt-get update && apt-get install -y \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# ビルド用作業ディレクトリ
+WORKDIR /backend
+
 # 依存関係のインストール
 COPY requirements.txt .
-RUN pip install --upgrade pip \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip \
     && pip install -r requirements.txt
 
 # ソースコードのコピー
 COPY . .
 
-# アプリケーションのビルド
-RUN pip install -e .
-
 # 本番環境用のステージ
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # 環境変数の設定
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app"
+
+# healthcheck 用ツール（curl）をインストール
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # ユーザーの作成
 RUN addgroup --system app && adduser --system --group app
@@ -48,7 +54,12 @@ WORKDIR /app
 # ソースコードのコピー
 COPY --from=builder --chown=app:app /backend/api /app/api
 COPY --from=builder --chown=app:app /backend/main.py /app/main.py
-COPY --from=builder --chown=app:app /backend/config.toml /app/config.toml
+COPY --from=builder --chown=app:app /backend/migrate_db.py /app/migrate_db.py
+COPY --from=builder --chown=app:app /backend/alembic.ini /app/alembic.ini
+COPY --from=builder --chown=app:app /backend/config.toml.example /app/config.toml
+
+# アップロードディレクトリの作成（非rootユーザーで書き込み可能にする）
+RUN mkdir -p /app/uploads && chown -R app:app /app
 
 # 静的ファイルのコピー（存在する場合）
 RUN mkdir -p /app/static && \
