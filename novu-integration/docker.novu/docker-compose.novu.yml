@@ -1,0 +1,245 @@
+services:
+  # Novu API Service
+  novu-api:
+    image: ghcr.io/novuhq/novu/api:0.24.0
+    container_name: novu-api
+    env_file:
+      - .env.novu
+    environment:
+      PORT: 3000
+      
+      # MongoDB
+      MONGO_URL: mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-root}@novu-mongo:27017/novu-db?authSource=admin
+      
+      # Redis
+      REDIS_HOST: novu-redis
+      REDIS_PORT: 6379
+      REDIS_DB_INDEX: 2
+      REDIS_CACHE_SERVICE_HOST: novu-redis
+      REDIS_CACHE_SERVICE_PORT: 6379
+      
+      # S3 Storage (optional)
+      S3_LOCAL_STACK: ${S3_LOCAL_STACK:-http://localstack:4566}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-novu-local}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      
+      # API Rate Limiting
+      API_RATE_LIMIT_MAXIMUM: ${API_RATE_LIMIT_MAXIMUM:-500}
+      API_RATE_LIMIT_DURATION: ${API_RATE_LIMIT_DURATION:-60}
+      
+      # New Relic (optional)
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-}
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      
+      # Sentry (optional)
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      
+    ports:
+      - "3000:3000"
+    depends_on:
+      novu-mongo:
+        condition: service_healthy
+      novu-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/v1/health-check || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - novu-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Novu WebSocket Service
+  novu-ws:
+    image: ghcr.io/novuhq/novu/ws:0.24.0
+    container_name: novu-ws
+    env_file:
+      - .env.novu
+    environment:
+      PORT: 3002
+      
+      # Redis
+      REDIS_HOST: novu-redis
+      REDIS_PORT: 6379
+      REDIS_DB_INDEX: 2
+      
+    ports:
+      - "3002:3002"
+    depends_on:
+      novu-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3002/health-check || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - novu-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Novu Worker Service
+  novu-worker:
+    image: ghcr.io/novuhq/novu/worker:0.24.0
+    container_name: novu-worker
+    env_file:
+      - .env.novu
+    environment:
+      # MongoDB
+      MONGO_URL: mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-root}@novu-mongo:27017/novu-db?authSource=admin
+      
+      # Redis
+      REDIS_HOST: novu-redis
+      REDIS_PORT: 6379
+      REDIS_DB_INDEX: 2
+      REDIS_CACHE_SERVICE_HOST: novu-redis
+      REDIS_CACHE_SERVICE_PORT: 6379
+      
+      # S3 Storage
+      S3_LOCAL_STACK: ${S3_LOCAL_STACK:-http://localstack:4566}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-novu-local}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      
+    depends_on:
+      novu-mongo:
+        condition: service_healthy
+      novu-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - novu-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Novu Web Dashboard
+  novu-web:
+    image: ghcr.io/novuhq/novu/web:0.24.0
+    container_name: novu-web
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3000}
+      REACT_APP_WS_URL: ${REACT_APP_WS_URL:-http://localhost:3002}
+      REACT_APP_ENVIRONMENT: ${REACT_APP_ENVIRONMENT:-production}
+      
+    ports:
+      - "4200:4200"
+    depends_on:
+      - novu-api
+    restart: unless-stopped
+    networks:
+      - novu-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # MongoDB for Novu
+  novu-mongo:
+    image: mongo:6.0
+    container_name: novu-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-root}
+      MONGO_INITDB_DATABASE: novu-db
+    volumes:
+      - novu-mongo-data:/data/db
+      - ./mongo/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    ports:
+      - "27017:27017"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - novu-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Redis for Novu
+  novu-redis:
+    image: redis:7-alpine
+    container_name: novu-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - novu-redis-data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - novu-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # LocalStack for S3 (optional, for local development)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: novu-localstack
+    environment:
+      SERVICES: s3
+      DEBUG: 1
+      DATA_DIR: /tmp/localstack/data
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    volumes:
+      - novu-localstack-data:/tmp/localstack
+    ports:
+      - "4566:4566"
+    restart: unless-stopped
+    networks:
+      - novu-network
+    profiles:
+      - dev
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  novu-mongo-data:
+    driver: local
+  novu-redis-data:
+    driver: local
+  novu-localstack-data:
+    driver: local
+
+networks:
+  novu-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
