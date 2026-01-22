@@ -6,7 +6,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from novu.api import EventApi
+from novu.api import EventApi, SubscriberApi
 from novu.dto import SubscriberDto, TopicDto
 from novu.config import NovuConfig
 
@@ -34,13 +34,17 @@ class NovuAdapter:
         if not self.api_key:
             raise ValueError("Novu API key is required. Set NOVU_API_KEY environment variable.")
         
-        # Novu設定
-        config = NovuConfig()
-        config.api_key = self.api_key
-        config.backend_url = self.backend_url
+        # EventApi初期化 - 直接URLとAPI Keyを渡す
+        self.event_api = EventApi(
+            url=self.backend_url,
+            api_key=self.api_key
+        )
         
-        # EventApi初期化
-        self.event_api = EventApi(config=config)
+        # SubscriberApi初期化
+        self.subscriber_api = SubscriberApi(
+            url=self.backend_url,
+            api_key=self.api_key
+        )
         
         logger.info(f"NovuAdapter initialized with backend URL: {self.backend_url}")
     
@@ -76,11 +80,10 @@ class NovuAdapter:
                 first_name=first_name,
                 last_name=last_name,
                 phone=phone,
-                avatar=avatar,
-                data=data or {}
+                avatar=avatar
             )
             
-            result = self.event_api.subscribers.identify(subscriber_dto)
+            result = self.subscriber_api.create(subscriber_dto)
             logger.info(f"Subscriber created/updated: {subscriber_id}")
             return result
             
@@ -229,7 +232,7 @@ class NovuAdapter:
             購読者情報、存在しない場合はNone
         """
         try:
-            result = self.event_api.subscribers.get(subscriber_id)
+            result = self.subscriber_api.get(subscriber_id)
             return result
             
         except Exception as e:
@@ -268,11 +271,10 @@ class NovuAdapter:
                 first_name=first_name,
                 last_name=last_name,
                 phone=phone,
-                avatar=avatar,
-                data=data
+                avatar=avatar
             )
             
-            result = self.event_api.subscribers.update(subscriber_id, subscriber_dto)
+            result = self.subscriber_api.update(subscriber_id, subscriber_dto)
             logger.info(f"Subscriber updated: {subscriber_id}")
             return result
             
@@ -294,7 +296,7 @@ class NovuAdapter:
             成功した場合True
         """
         try:
-            self.event_api.subscribers.delete(subscriber_id)
+            self.subscriber_api.delete(subscriber_id)
             logger.info(f"Subscriber deleted: {subscriber_id}")
             return True
             
@@ -316,7 +318,7 @@ class NovuAdapter:
             通知設定のリスト
         """
         try:
-            result = self.event_api.subscribers.get_preferences(subscriber_id)
+            result = self.subscriber_api.get_preferences(subscriber_id)
             return result.get("data", [])
             
         except Exception as e:
@@ -343,7 +345,7 @@ class NovuAdapter:
             更新された設定情報
         """
         try:
-            result = self.event_api.subscribers.update_preference(
+            result = self.subscriber_api.update_preference(
                 subscriber_id=subscriber_id,
                 template_id=template_id,
                 channel_type=channel_type,
@@ -376,7 +378,7 @@ class NovuAdapter:
             通知リストと総数
         """
         try:
-            result = self.event_api.subscribers.get_notifications(
+            result = self.subscriber_api.get_notifications(
                 subscriber_id=subscriber_id,
                 page=page,
                 limit=limit,
@@ -404,7 +406,7 @@ class NovuAdapter:
             未読/既読通知数
         """
         try:
-            result = self.event_api.subscribers.get_unseen_count(
+            result = self.subscriber_api.get_unseen_count(
                 subscriber_id=subscriber_id,
                 seen=seen
             )
@@ -431,7 +433,7 @@ class NovuAdapter:
             成功した場合True
         """
         try:
-            self.event_api.subscribers.mark_message_as_seen(
+            self.subscriber_api.mark_message_as_seen(
                 subscriber_id=subscriber_id,
                 message_id=message_id
             )
@@ -458,7 +460,7 @@ class NovuAdapter:
             成功した場合True
         """
         try:
-            self.event_api.subscribers.mark_message_as_read(
+            self.subscriber_api.mark_message_as_read(
                 subscriber_id=subscriber_id,
                 message_id=message_id
             )
@@ -485,7 +487,7 @@ class NovuAdapter:
             成功した場合True
         """
         try:
-            self.event_api.subscribers.mark_all_messages_as_read(
+            self.subscriber_api.mark_all_messages_as_read(
                 subscriber_id=subscriber_id,
                 feed_identifier=feed_identifier
             )
@@ -512,7 +514,7 @@ class NovuAdapter:
             成功した場合True
         """
         try:
-            self.event_api.subscribers.delete_message(
+            self.subscriber_api.delete_message(
                 subscriber_id=subscriber_id,
                 message_id=message_id
             )

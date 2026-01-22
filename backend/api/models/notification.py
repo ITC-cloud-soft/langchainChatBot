@@ -8,7 +8,7 @@ from sqlalchemy import Column, String, Text, DateTime, Enum as SQLEnum, JSON
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 
-from api.models.base import Base
+from api.models.database import Base
 
 
 class NotificationStatus(enum.StrEnum):

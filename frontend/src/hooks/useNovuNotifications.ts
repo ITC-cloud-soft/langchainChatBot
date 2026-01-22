@@ -1,5 +1,5 @@
 /**
- * Novu通知フック - Novu Headless SDKをラップ
+ * 通知フック - Novu統合版（WebSocket + REST API）
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
@@ -54,8 +54,8 @@ export function useNovuNotifications(
   const {
     subscriberId,
     applicationIdentifier,
-    backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000',
-    socketUrl = process.env.NEXT_PUBLIC_NOVU_WS_URL || 'http://localhost:3002',
+    backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000',
+    socketUrl = import.meta.env.VITE_NOVU_WS_URL || 'http://localhost:3002',
     initialFetchCount = 10,
   } = options;
 
@@ -65,10 +65,11 @@ export function useNovuNotifications(
   const [error, setError] = useState<Error | null>(null);
   const [page, setPage] = useState<number>(0);
   const [hasMore, setHasMore] = useState<boolean>(true);
-
+  
   const socketRef = useRef<Socket | null>(null);
 
-  // 通知リストを取得
+
+  // 通知リストを取得（バックエンドAPI経由）
   const fetchNotifications = useCallback(
     async (pageNum: number = 0, append: boolean = false) => {
       try {
@@ -76,11 +77,10 @@ export function useNovuNotifications(
         setError(null);
 
         const response = await fetch(
-          `${backendUrl}/api/notifications?page=${pageNum}&limit=${initialFetchCount}`,
+          `${backendUrl}/api/notifications/?page=${pageNum}&limit=${initialFetchCount}`,
           {
             headers: {
               'Content-Type': 'application/json',
-              // 認証トークンをヘッダーに追加
               Authorization: `Bearer ${localStorage.getItem('access_token')}`,
             },
           }
@@ -91,14 +91,15 @@ export function useNovuNotifications(
         }
 
         const data = await response.json();
+        const notifications = data.data || [];
         
         if (append) {
-          setNotifications((prev) => [...prev, ...data.data]);
+          setNotifications((prev) => [...prev, ...notifications]);
         } else {
-          setNotifications(data.data);
+          setNotifications(notifications);
         }
 
-        setHasMore(data.data.length === initialFetchCount);
+        setHasMore(notifications.length === initialFetchCount);
       } catch (err) {
         setError(err as Error);
         console.error('Failed to fetch notifications:', err);
@@ -109,7 +110,7 @@ export function useNovuNotifications(
     [backendUrl, initialFetchCount]
   );
 
-  // 未読数を取得
+  // 未読数を取得（バックエンドAPI経由）
   const fetchUnreadCount = useCallback(async () => {
     try {
       const response = await fetch(`${backendUrl}/api/notifications/unread-count`, {
@@ -124,7 +125,7 @@ export function useNovuNotifications(
       }
 
       const data = await response.json();
-      setUnreadCount(data.unread);
+      setUnreadCount(data.unread || 0);
     } catch (err) {
       console.error('Failed to fetch unread count:', err);
     }
@@ -279,20 +280,28 @@ export function useNovuNotifications(
     fetchNotifications(0, false);
     fetchUnreadCount();
 
-    // WebSocket接続
+    // WebSocket接続（Novu WebSocketサーバーに接続）
     const socket = io(socketUrl, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       query: {
         subscriberId,
         applicationIdentifier,
       },
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
     });
 
     socketRef.current = socket;
 
+    // 接続成功
+    socket.on('connect', () => {
+      console.log('✅ Novu WebSocket connected');
+    });
+
     // 新しい通知を受信
     socket.on('notification_received', (notification: Notification) => {
-      console.log('New notification received:', notification);
+      console.log('📬 New notification received:', notification);
       setNotifications((prev) => [notification, ...prev]);
       setUnreadCount((prev) => prev + 1);
 
@@ -319,7 +328,12 @@ export function useNovuNotifications(
 
     // 接続エラー
     socket.on('connect_error', (err) => {
-      console.error('WebSocket connection error:', err);
+      console.error('❌ WebSocket connection error:', err);
+    });
+
+    // 切断
+    socket.on('disconnect', (reason) => {
+      console.log('🔌 WebSocket disconnected:', reason);
     });
 
     // クリーンアップ

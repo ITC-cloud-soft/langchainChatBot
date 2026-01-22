@@ -2,10 +2,28 @@
  * 通知ベルコンポーネント - Novu統合版
  */
 import React, { useState, useCallback } from 'react';
-import { Badge, Drawer, List, Button, Empty, Spin, message } from 'antd';
-import { BellOutlined, CloseOutlined, CheckOutlined } from '@ant-design/icons';
-import { useRouter } from 'next/navigation';
+import {
+  Badge,
+  Drawer,
+  List,
+  ListItem,
+  ListItemText,
+  IconButton,
+  Button,
+  Typography,
+  Box,
+  CircularProgress,
+  Divider,
+} from '@mui/material';
+import {
+  Notifications as BellIcon,
+  Close as CloseIcon,
+  CheckCircle as CheckIcon,
+  Delete as DeleteIcon,
+} from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { useNovuNotifications } from '../hooks/useNovuNotifications';
+import { useSnackbar } from 'notistack';
 
 interface NotificationBellProps {
   userId: string;
@@ -13,7 +31,8 @@ interface NotificationBellProps {
 }
 
 export default function NotificationBell({ userId, onNotificationClick }: NotificationBellProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
+  const { enqueueSnackbar } = useSnackbar();
   const [open, setOpen] = useState(false);
 
   const {
@@ -27,7 +46,9 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
     fetchMore,
   } = useNovuNotifications({
     subscriberId: userId,
-    applicationIdentifier: process.env.NEXT_PUBLIC_NOVU_APP_ID || '',
+    applicationIdentifier: import.meta.env.VITE_NOVU_APP_ID || '',
+    backendUrl: import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000',
+    socketUrl: import.meta.env.VITE_NOVU_WS_URL || 'http://localhost:3002',
   });
 
   // ドロワーを開く
@@ -75,15 +96,15 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
           );
 
           // チャットボットページに遷移
-          router.push('/chatbot');
+          navigate('/chat');
           handleClose();
         }
       } catch (err) {
         console.error('Failed to handle notification click:', err);
-        message.error('通知の処理に失敗しました');
+        enqueueSnackbar('通知の処理に失敗しました', { variant: 'error' });
       }
     },
-    [markAsRead, onNotificationClick, router, handleClose]
+    [markAsRead, onNotificationClick, navigate, handleClose]
   );
 
   // 通知を削除
@@ -92,10 +113,10 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
       e.stopPropagation();
       try {
         await remove(notificationId);
-        message.success('通知を削除しました');
+        enqueueSnackbar('通知を削除しました', { variant: 'success' });
       } catch (err) {
         console.error('Failed to delete notification:', err);
-        message.error('通知の削除に失敗しました');
+        enqueueSnackbar('通知の削除に失敗しました', { variant: 'error' });
       }
     },
     [remove]
@@ -105,10 +126,10 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
   const handleMarkAllRead = useCallback(async () => {
     try {
       await markAllAsRead();
-      message.success('全ての通知を既読にしました');
+      enqueueSnackbar('全ての通知を既読にしました', { variant: 'success' });
     } catch (err) {
       console.error('Failed to mark all as read:', err);
-      message.error('一括既読に失敗しました');
+      enqueueSnackbar('一括既読に失敗しました', { variant: 'error' });
     }
   }, [markAllAsRead]);
 
@@ -133,75 +154,79 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
       const isWorkflowRequest = item.payload?.type === 'workflow_request';
 
       return (
-        <List.Item
+        <ListItem
           key={item._id}
           onClick={() => handleNotificationClick(item)}
-          className={`notification-item ${isUnread ? 'unread' : ''}`}
-          style={{
+          sx={{
             cursor: 'pointer',
-            backgroundColor: isUnread ? '#f0f7ff' : 'transparent',
-            borderLeft: isUnread ? '4px solid #1890ff' : '4px solid transparent',
-            padding: '12px 16px',
-            transition: 'all 0.3s',
+            bgcolor: isUnread ? 'action.hover' : 'transparent',
+            borderLeft: isUnread ? 4 : 0,
+            borderColor: 'primary.main',
+            '&:hover': {
+              bgcolor: 'action.selected',
+            },
           }}
-          actions={[
-            <Button
-              key="delete"
-              type="text"
-              size="small"
-              icon={<CloseOutlined />}
+          secondaryAction={
+            <IconButton
+              edge="end"
               onClick={(e) => handleDelete(e, item._id)}
-              style={{ color: '#999' }}
-            />,
-          ]}
+              size="small"
+            >
+              <DeleteIcon />
+            </IconButton>
+          }
         >
-          <List.Item.Meta
-            title={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ListItemText
+            primary={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 {isUnread && (
-                  <span
-                    style={{
-                      width: '8px',
-                      height: '8px',
+                  <Box
+                    sx={{
+                      width: 8,
+                      height: 8,
                       borderRadius: '50%',
-                      backgroundColor: '#1890ff',
+                      bgcolor: 'primary.main',
                     }}
                   />
                 )}
-                <span style={{ fontWeight: isUnread ? 600 : 400 }}>
+                <Typography
+                  variant="body1"
+                  sx={{ fontWeight: isUnread ? 600 : 400 }}
+                >
                   {item.payload?.title || item.content}
-                </span>
-              </div>
+                </Typography>
+              </Box>
             }
-            description={
-              <div>
-                <div style={{ marginBottom: '8px', color: '#666' }}>
+            secondary={
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                   {item.payload?.content || ''}
-                </div>
+                </Typography>
 
                 {/* ワークフロー情報 */}
                 {isWorkflowRequest && item.payload?.workflowData && (
-                  <div
-                    style={{
-                      padding: '8px',
-                      backgroundColor: '#f5f5f5',
-                      borderRadius: '4px',
-                      fontSize: '12px',
+                  <Box
+                    sx={{
+                      p: 1,
+                      bgcolor: 'grey.100',
+                      borderRadius: 1,
+                      fontSize: '0.75rem',
+                      mb: 1,
                     }}
                   >
                     <div>WorkID: {item.payload.workflowData.WorkID}</div>
                     <div>FlowName: {item.payload.workflowData.FlowName}</div>
                     <div>申請者: {item.payload.workflowData.StarterName}</div>
-                  </div>
+                  </Box>
                 )}
 
-                <div style={{ marginTop: '8px', fontSize: '12px', color: '#999' }}>
+                <Typography variant="caption" color="text.disabled">
                   {new Date(item.createdAt).toLocaleString('ja-JP')}
-                </div>
-              </div>
+                </Typography>
+              </Box>
             }
           />
-        </List.Item>
+        </ListItem>
       );
     },
     [handleNotificationClick, handleDelete]
@@ -210,74 +235,64 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
   return (
     <>
       {/* 通知ベルアイコン */}
-      <Badge count={unreadCount} offset={[-5, 5]}>
-        <Button
-          type="text"
-          icon={<BellOutlined style={{ fontSize: '20px' }} />}
+      <Badge badgeContent={unreadCount} color="error">
+        <IconButton
+          color="inherit"
           onClick={handleOpen}
-          style={{ border: 'none' }}
-        />
+          size="large"
+        >
+          <BellIcon />
+        </IconButton>
       </Badge>
 
       {/* 通知ドロワー */}
       <Drawer
-        title={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>通知</span>
-            {unreadCount > 0 && (
-              <Button
-                type="link"
-                size="small"
-                icon={<CheckOutlined />}
-                onClick={handleMarkAllRead}
-              >
-                全て既読
-              </Button>
-            )}
-          </div>
-        }
-        placement="right"
-        width={400}
+        anchor="right"
         open={open}
         onClose={handleClose}
-        bodyStyle={{ padding: 0 }}
+        PaperProps={{
+          sx: { width: 400 }
+        }}
       >
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
+          <Typography variant="h6">通知</Typography>
+          {unreadCount > 0 && (
+            <Button
+              size="small"
+              startIcon={<CheckIcon />}
+              onClick={handleMarkAllRead}
+            >
+              全て既読
+            </Button>
+          )}
+        </Box>
         {error && (
-          <div style={{ padding: '16px', color: 'red' }}>
+          <Box sx={{ p: 2, color: 'error.main' }}>
             エラーが発生しました: {error.message}
-          </div>
+          </Box>
         )}
 
         {isLoading && notifications.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center' }}>
-            <Spin size="large" />
-          </div>
+          <Box sx={{ p: 5, textAlign: 'center' }}>
+            <CircularProgress />
+          </Box>
         ) : notifications.length === 0 ? (
-          <Empty
-            description="通知はありません"
-            style={{ marginTop: '40px' }}
-          />
+          <Box sx={{ p: 5, textAlign: 'center' }}>
+            <Typography color="text.secondary">通知はありません</Typography>
+          </Box>
         ) : (
-          <div onScroll={handleScroll} style={{ height: '100%', overflowY: 'auto' }}>
-            <List
-              dataSource={notifications}
-              renderItem={renderNotificationItem}
-              split={true}
-            />
+          <Box onScroll={handleScroll} sx={{ height: 'calc(100vh - 80px)', overflowY: 'auto' }}>
+            <List>
+              {notifications.map((item) => renderNotificationItem(item))}
+            </List>
             {isLoading && (
-              <div style={{ padding: '16px', textAlign: 'center' }}>
-                <Spin />
-              </div>
+              <Box sx={{ p: 2, textAlign: 'center' }}>
+                <CircularProgress size={24} />
+              </Box>
             )}
-          </div>
+          </Box>
         )}
       </Drawer>
-
-      <style jsx>{`
-        .notification-item:hover {
-          background-color: #fafafa !important;
-        }
-      `}</style>
     </>
   );
 }

@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from api.adapters.novu_adapter import NovuAdapter
 from api.services.notification_service import NotificationService
-from api.dependencies import get_db, get_current_user, get_novu_adapter
+from api.core.database import get_db_session
+from api.middleware.auth_middleware import get_current_user
 from api.schemas.notification import (
     NotificationListResponse,
     NotificationResponse,
@@ -20,18 +21,23 @@ from api.schemas.notification import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+router = APIRouter()
+
+
+def get_novu_adapter() -> NovuAdapter:
+    """Novuアダプターの依存性注入"""
+    return NovuAdapter()
 
 
 def get_notification_service(
-    db: Session = Depends(get_db),
+    db = Depends(get_db_session),
     novu: NovuAdapter = Depends(get_novu_adapter)
 ) -> NotificationService:
     """通知サービスの依存性注入"""
     return NotificationService(novu_adapter=novu, db_session=db)
 
 
-@router.get("/", response_model=NotificationListResponse)
+@router.get("/")
 async def list_notifications(
     unread_only: bool = Query(False, description="未読のみ取得"),
     page: int = Query(0, ge=0, description="ページ番号"),
@@ -48,14 +54,14 @@ async def list_notifications(
     """
     try:
         result = service.list_notifications(
-            user_id=current_user.id,
+            user_id=str(current_user.user_id),
             unread_only=unread_only,
             page=page,
             limit=limit
         )
         return result
     except Exception as e:
-        logger.error(f"Failed to list notifications: {str(e)}")
+        logger.error(f"Failed to list notifications: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="通知リストの取得に失敗しました")
 
 
@@ -68,7 +74,7 @@ async def get_unread_count(
     未読通知数を取得
     """
     try:
-        count = service.get_unread_count(user_id=current_user.id)
+        count = service.get_unread_count(user_id=current_user.user_id)
         return {"unread": count}
     except Exception as e:
         logger.error(f"Failed to get unread count: {str(e)}")
@@ -88,7 +94,7 @@ async def mark_as_read(
     """
     try:
         success = service.mark_as_read(
-            user_id=current_user.id,
+            user_id=current_user.user_id,
             notification_id=notification_id
         )
         if not success:
@@ -114,7 +120,7 @@ async def mark_as_seen(
     """
     try:
         success = service.mark_as_seen(
-            user_id=current_user.id,
+            user_id=current_user.user_id,
             notification_id=notification_id
         )
         if not success:
@@ -136,7 +142,7 @@ async def mark_all_as_read(
     全通知を既読としてマーク
     """
     try:
-        success = service.mark_all_as_read(user_id=current_user.id)
+        success = service.mark_all_as_read(user_id=current_user.user_id)
         if not success:
             raise HTTPException(status_code=500, detail="一括既読マークに失敗しました")
         return {"result": "success"}
@@ -160,7 +166,7 @@ async def delete_notification(
     """
     try:
         success = service.delete_notification(
-            user_id=current_user.id,
+            user_id=current_user.user_id,
             notification_id=notification_id
         )
         if not success:
@@ -189,7 +195,7 @@ async def send_workflow_approval(
         notification = service.send_workflow_approval(
             receiver_id=request.receiver_id,
             workflow_data=request.workflow_data,
-            sender_id=current_user.id,
+            sender_id=current_user.user_id,
             tenant_id=request.tenant_id,
             chatbot_id=request.chatbot_id
         )
@@ -239,7 +245,7 @@ async def sync_subscriber(
     """
     try:
         success = service.sync_subscriber(
-            user_id=current_user.id,
+            user_id=current_user.user_id,
             email=current_user.email,
             first_name=current_user.first_name,
             last_name=current_user.last_name,

@@ -2,6 +2,8 @@
 通知サービス - Novuアダプターとローカルデータベースを統合
 """
 import logging
+import requests
+import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -177,7 +179,7 @@ class NotificationService:
         limit: int = 10
     ) -> Dict[str, Any]:
         """
-        通知リストを取得 (Novuから)
+        通知リストを取得 (Novu Messages APIから直接取得)
         
         Args:
             user_id: ユーザーID
@@ -189,34 +191,49 @@ class NotificationService:
             通知リストと総数
         """
         try:
-            # Novuから通知を取得
-            result = self.novu.get_notifications(
-                subscriber_id=user_id,
-                page=page,
-                limit=limit
+            # Novu Messages APIから直接取得
+            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
+            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
+            
+            response = requests.get(
+                f"{novu_api_url}/v1/messages",
+                headers={
+                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Content-Type": "application/json"
+                },
+                params={
+                    "subscriberId": user_id,
+                    "channel": "in_app",
+                    "page": page,
+                    "limit": limit
+                }
             )
             
-            notifications = result.get("data", [])
-            total_count = result.get("totalCount", 0)
-            
-            # 未読のみフィルタ
-            if unread_only:
-                notifications = [n for n in notifications if not n.get("read")]
-            
-            return {
-                "data": notifications,
-                "totalCount": total_count if not unread_only else len(notifications),
-                "page": page,
-                "pageSize": limit
-            }
+            if response.status_code == 200:
+                result = response.json()
+                notifications = result.get("data", [])
+                
+                # 未読のみフィルタ
+                if unread_only:
+                    notifications = [n for n in notifications if not n.get("seen")]
+                
+                return {
+                    "data": notifications,
+                    "total": len(notifications),
+                    "page": page,
+                    "pageSize": limit
+                }
+            else:
+                logger.error(f"Novu API returned {response.status_code}: {response.text}")
+                return {"data": [], "total": 0, "page": page, "pageSize": limit}
             
         except Exception as e:
             logger.error(f"Failed to list notifications for user {user_id}: {str(e)}")
-            return {"data": [], "totalCount": 0, "page": page, "pageSize": limit}
+            return {"data": [], "total": 0, "page": page, "pageSize": limit}
     
     def get_unread_count(self, user_id: str) -> int:
         """
-        未読通知数を取得
+        未読通知数を取得 (Novu Messages APIから直接取得)
         
         Args:
             user_id: ユーザーID
@@ -225,8 +242,34 @@ class NotificationService:
             未読通知数
         """
         try:
-            count = self.novu.get_unseen_count(subscriber_id=user_id, seen=False)
-            return count
+            # Novu Messages APIから直接取得
+            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
+            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
+            
+            response = requests.get(
+                f"{novu_api_url}/v1/messages",
+                headers={
+                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Content-Type": "application/json"
+                },
+                params={
+                    "subscriberId": user_id,
+                    "channel": "in_app",
+                    "page": 0,
+                    "limit": 100
+                }
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                messages = result.get("data", [])
+                # seenがfalseのものを未読としてカウント
+                unread_count = sum(1 for msg in messages if not msg.get("seen", False))
+                return unread_count
+            else:
+                logger.error(f"Novu API returned {response.status_code}: {response.text}")
+                return 0
+                
         except Exception as e:
             logger.error(f"Failed to get unread count for user {user_id}: {str(e)}")
             return 0
@@ -237,35 +280,41 @@ class NotificationService:
         notification_id: str
     ) -> bool:
         """
-        通知を既読としてマーク
+        通知を既読としてマーク (Novu Subscribers APIを使用)
         
         Args:
-            user_id: ユーザーID
+            user_id: ユーザーID (subscriber ID)
             notification_id: 通知ID (Novu message ID)
             
         Returns:
             成功した場合True
         """
         try:
-            # Novuで既読マーク
-            success = self.novu.mark_message_as_read(
-                subscriber_id=user_id,
-                message_id=notification_id
+            # Novu Subscribers APIで既読マーク
+            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
+            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
+            
+            response = requests.post(
+                f"{novu_api_url}/v1/subscribers/{user_id}/messages/markAs",
+                json={
+                    "messageId": notification_id,
+                    "mark": {
+                        "seen": True,
+                        "read": True
+                    }
+                },
+                headers={
+                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Content-Type": "application/json"
+                }
             )
             
-            if success:
-                # ローカルデータベースも更新
-                notification = self.db.query(Notification).filter(
-                    Notification.novu_notification_id == notification_id,
-                    Notification.receiver_id == user_id
-                ).first()
-                
-                if notification:
-                    notification.status = NotificationStatus.READ
-                    notification.read_at = datetime.utcnow()
-                    self.db.commit()
-            
-            return success
+            if response.status_code in [200, 201, 204]:
+                logger.info(f"Successfully marked notification {notification_id} as read for user {user_id}")
+                return True
+            else:
+                logger.error(f"Novu API returned {response.status_code}: {response.text}")
+                return False
             
         except Exception as e:
             logger.error(f"Failed to mark notification as read: {str(e)}")
@@ -277,21 +326,39 @@ class NotificationService:
         notification_id: str
     ) -> bool:
         """
-        通知を既読としてマーク (seen)
+        通知を既読としてマーク (seen) - Novu Subscribers APIを使用
         
         Args:
-            user_id: ユーザーID
+            user_id: ユーザーID (subscriber ID)
             notification_id: 通知ID (Novu message ID)
             
         Returns:
             成功した場合True
         """
         try:
-            success = self.novu.mark_message_as_seen(
-                subscriber_id=user_id,
-                message_id=notification_id
+            # Novu Subscribers APIでseenマーク
+            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
+            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
+            
+            response = requests.post(
+                f"{novu_api_url}/v1/subscribers/{user_id}/messages/markAs",
+                json={
+                    "messageId": notification_id,
+                    "mark": {
+                        "seen": True
+                    }
+                },
+                headers={
+                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Content-Type": "application/json"
+                }
             )
-            return success
+            
+            if response.status_code in [200, 201, 204]:
+                return True
+            else:
+                logger.error(f"Novu API returned {response.status_code}: {response.text}")
+                return False
             
         except Exception as e:
             logger.error(f"Failed to mark notification as seen: {str(e)}")
@@ -299,29 +366,65 @@ class NotificationService:
     
     def mark_all_as_read(self, user_id: str) -> bool:
         """
-        全通知を既読としてマーク
+        全通知を既読としてマーク (Novu Messages APIを使用)
         
         Args:
-            user_id: ユーザーID
+            user_id: ユーザーID (subscriber ID)
             
         Returns:
             成功した場合True
         """
         try:
-            success = self.novu.mark_all_messages_as_read(subscriber_id=user_id)
+            # まず未読通知を取得
+            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
+            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
             
-            if success:
-                # ローカルデータベースも更新
-                self.db.query(Notification).filter(
-                    Notification.receiver_id == user_id,
-                    Notification.status != NotificationStatus.READ
-                ).update({
-                    "status": NotificationStatus.READ,
-                    "read_at": datetime.utcnow()
-                })
-                self.db.commit()
+            # 未読通知を取得
+            response = requests.get(
+                f"{novu_api_url}/v1/messages",
+                params={
+                    "subscriberId": user_id,
+                    "page": 0,
+                    "limit": 100  # 一度に最大100件
+                },
+                headers={
+                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Content-Type": "application/json"
+                }
+            )
             
-            return success
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch messages: {response.status_code}")
+                return False
+            
+            data = response.json()
+            messages = data.get("data", [])
+            
+            # 未読メッセージを既読にマーク
+            success_count = 0
+            for message in messages:
+                if not message.get("read"):
+                    message_id = message.get("_id")
+                    mark_response = requests.post(
+                        f"{novu_api_url}/v1/subscribers/{user_id}/messages/markAs",
+                        json={
+                            "messageId": message_id,
+                            "mark": {
+                                "seen": True,
+                                "read": True
+                            }
+                        },
+                        headers={
+                            "Authorization": f"ApiKey {novu_api_key}",
+                            "Content-Type": "application/json"
+                        }
+                    )
+                    
+                    if mark_response.status_code in [200, 201, 204]:
+                        success_count += 1
+            
+            logger.info(f"Marked {success_count} messages as read for user {user_id}")
+            return True
             
         except Exception as e:
             logger.error(f"Failed to mark all notifications as read: {str(e)}")
@@ -333,34 +436,34 @@ class NotificationService:
         notification_id: str
     ) -> bool:
         """
-        通知を削除
+        通知を削除 (Novu Messages APIを使用)
         
         Args:
-            user_id: ユーザーID
+            user_id: ユーザーID (subscriber ID)
             notification_id: 通知ID (Novu message ID)
             
         Returns:
             成功した場合True
         """
         try:
-            # Novuから削除
-            success = self.novu.delete_message(
-                subscriber_id=user_id,
-                message_id=notification_id
+            # Novu Messages APIで削除
+            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
+            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
+            
+            response = requests.delete(
+                f"{novu_api_url}/v1/messages/{notification_id}",
+                headers={
+                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Content-Type": "application/json"
+                }
             )
             
-            if success:
-                # ローカルデータベースも更新 (論理削除)
-                notification = self.db.query(Notification).filter(
-                    Notification.novu_notification_id == notification_id,
-                    Notification.receiver_id == user_id
-                ).first()
-                
-                if notification:
-                    notification.deleted_at = datetime.utcnow()
-                    self.db.commit()
-            
-            return success
+            if response.status_code in [200, 201, 204]:
+                logger.info(f"Successfully deleted notification {notification_id} for user {user_id}")
+                return True
+            else:
+                logger.error(f"Novu API returned {response.status_code}: {response.text}")
+                return False
             
         except Exception as e:
             logger.error(f"Failed to delete notification: {str(e)}")
