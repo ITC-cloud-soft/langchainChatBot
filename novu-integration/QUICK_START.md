@@ -1,184 +1,176 @@
-# Novu集成快速开始指南
+# Novu WebSocket リアルタイム通知 - クイックスタート
 
-5分钟快速启动Novu通知系统!
+**最終更新**: 2026-01-22  
+**所要時間**: 5分  
+**難易度**: ⭐⭐☆☆☆
 
-## 🚀 快速启动 (3步)
+## 🚀 3ステップで起動
 
-### 步骤1: 启动Novu服务 (2分钟)
+### ステップ1: Novu サービス起動 (2分)
 
 ```bash
-cd langchainChatBot/novu-integration/docker.novu
+cd novu-integration/docker.novu
 
-# 复制环境变量
-cp .env.novu.example .env.novu
+# 環境変数ファイルを確認（既に設定済みの場合はスキップ）
+# .env.novu ファイルに JWT_SECRET が設定されていることを確認
 
-# 生成密钥并填入.env.novu
-openssl rand -base64 32  # JWT密钥
-openssl rand -hex 16     # 加密密钥(32字符)
-
-# 启动服务
+# Novu サービスを起動
 docker-compose -f docker-compose.novu.yml up -d
 
-# 等待服务就绪(约30秒)
+# サービスが起動するまで待機（約30秒）
 docker-compose -f docker-compose.novu.yml logs -f novu-api
 ```
 
-### 步骤2: 配置Novu (2分钟)
-
-1. 打开浏览器访问: `http://localhost:4200`
-2. 创建账户(任意邮箱和密码)
-3. 登录后,点击右上角设置图标
-4. 进入 "API Keys" 页面
-5. 复制 "API Key" (以 `novu_` 开头)
-6. 复制 "Application Identifier"
-
-### 步骤3: 配置应用 (1分钟)
-
-**后端配置:**
+### ステップ2: Backend・Frontend 起動 (2分)
 
 ```bash
-cd ../../backend
+cd ../../
 
-# 添加到.env文件
-echo "NOVU_API_KEY=novu_xxxxxx" >> .env
-echo "NOVU_API_URL=http://localhost:3000" >> .env
+# Backend と Frontend を起動
+docker-compose -f docker-compose.full.dev.yml up -d
+
+# ログを確認
+docker-compose -f docker-compose.full.dev.yml logs -f chatbot-backend
 ```
 
-**前端配置:**
+### ステップ3: 動作確認 (1分)
 
 ```bash
-cd ../frontend
+# テスト通知を送信
+cd novu-integration/template/ssflow
+python ssflow_tool.py send 1
 
-# 添加到.env.local文件
-echo "NEXT_PUBLIC_NOVU_APP_ID=your_app_id" >> .env.local
-echo "NEXT_PUBLIC_NOVU_API_URL=http://localhost:3000" >> .env.local
-echo "NEXT_PUBLIC_BACKEND_URL=http://localhost:8000" >> .env.local
+# Frontend にアクセス
+# http://localhost:3001
+# 通知ベルアイコンをクリックして通知を確認
 ```
 
-## ✅ 验证安装
+## ✅ サービス確認
 
-### 检查Novu服务
+### Novu サービスの状態確認
 
 ```bash
-# 检查所有服务是否运行
-docker-compose -f langchainChatBot/novu-integration/docker.novu/docker-compose.novu.yml ps
+# すべてのサービスが "Up" 状態であることを確認
+docker-compose -f novu-integration/docker.novu/docker-compose.novu.yml ps
 
-# 应该看到5个服务都是"Up"状态:
-# - novu-api
-# - novu-ws
-# - novu-worker
-# - novu-web
-# - novu-mongo
-# - novu-redis
+# 期待される出力:
+# - novu-api      (Up)
+# - novu-ws       (Up)
+# - novu-worker   (Up)
+# - novu-web      (Up)
+# - novu-mongo    (Up)
+# - novu-redis    (Up)
 ```
 
-### 测试API连接
+### API 接続テスト
 
 ```bash
-# 测试Novu API
+# Novu API のヘルスチェック
 curl http://localhost:3000/v1/health-check
+# 期待される出力: {"status":"ok"}
 
-# 应该返回: {"status":"ok"}
-```
-
-### 测试WebSocket
-
-```bash
-# 测试WebSocket服务
+# WebSocket サービスのヘルスチェック
 curl http://localhost:3002/health-check
-
-# 应该返回: {"status":"ok"}
+# 期待される出力: {"status":"ok"}
 ```
 
-## 📝 下一步
+### Frontend アクセス
 
-### 创建第一个工作流
+ブラウザで以下にアクセス:
 
-1. 登录Novu Dashboard: `http://localhost:4200`
-2. 点击左侧 "Workflows"
-3. 点击 "Create Workflow"
-4. 选择 "Blank Workflow"
-5. 设置:
-   - Name: `workflow-approval`
-   - Identifier: `workflow-approval`
-6. 点击 "Add Step" → 选择 "In-App"
-7. 配置内容: `{{content}}`
-8. 保存
+- **Frontend**: <http://localhost:3001>
+- **Novu Dashboard**: <http://localhost:4200>
 
-### 发送测试通知
+## 📝 次のステップ
+
+### SSFlow 通知の送信
 
 ```bash
-cd langchainChatBot/backend
+cd novu-integration/template/ssflow
 
-# 运行测试脚本
-python scripts/test_novu_integration.py
+# ユーザー ID 1 に通知を送信
+python ssflow_tool.py send 1
+
+# 複数の通知を送信
+python ssflow_tool.py send 1
+python ssflow_tool.py send 1
+python ssflow_tool.py send 1
 ```
 
-### 启动应用
+### WebSocket 接続の確認
 
-```bash
-# 启动后端
-cd langchainChatBot/backend
-uvicorn main:app --reload
+ブラウザの開発者ツール（F12）を開き、コンソールで以下のログを確認:
 
-# 启动前端(新终端)
-cd langchainChatBot/frontend
-npm run dev
+```
+✅ Novu WebSocket connected successfully!
+📬 New notification received via WebSocket
 ```
 
-访问 `http://localhost:3001` 查看通知铃铛!
+## 🐛 トラブルシューティング
 
-## 🐛 常见问题
+### 問題1: Docker サービスが起動しない
 
-### 问题1: Docker服务无法启动
-
-**解决方案:**
+**解決策:**
 
 ```bash
-# 检查端口占用
+# ポート使用状況を確認
 netstat -ano | findstr "3000"
 netstat -ano | findstr "27017"
 
-# 停止并重启
+# サービスを再起動
+cd novu-integration/docker.novu
 docker-compose -f docker-compose.novu.yml down
 docker-compose -f docker-compose.novu.yml up -d
 ```
 
-### 问题2: 无法访问Dashboard
+### 問題2: WebSocket 接続エラー
 
-**解决方案:**
+**症状**: コンソールに `io server disconnect` エラー
+
+**解決策:**
+
+1. Backend と Novu WS の `JWT_SECRET` が一致しているか確認
+2. Backend ログで JWT token 生成を確認
+3. Novu WS ログで接続エラーを確認
 
 ```bash
-# 检查novu-web服务
-docker logs novu-web
+# Backend ログ確認
+docker logs chatbot-backend --tail 50 | grep "JWT"
 
-# 重启服务
-docker-compose -f docker-compose.novu.yml restart novu-web
+# Novu WS ログ確認
+docker logs novu-ws --tail 50 | grep "Connection"
 ```
 
-### 问题3: API Key无效
+### 問題3: 通知が届かない
 
-**解决方案:**
+**症状**: WebSocket 接続は成功するが通知が表示されない
 
-1. 确认复制了完整的API Key(包括 `novu_` 前缀)
-2. 检查 `.env` 文件中没有多余的空格或引号
-3. 重启后端服务
+**解決策:**
 
-## 📚 详细文档
+1. SSFlow ワークフローが Novu Dashboard で作成されているか確認
+2. Subscriber が正しく作成されているか確認
+3. Backend ログで通知送信を確認
 
-- **完整实施指南:** `../docs/done/notification/NOVU_IMPLEMENTATION_GUIDE.md`
-- **系统设计文档:** `../docs/done/notification/NOVU_SELF_HOSTED_DESIGN.md`
-- **文件位置说明:** `FILE_LOCATIONS.md`
-- **项目总结:** `../docs/done/notification/README_NOVU_INTEGRATION.md`
+```bash
+# Backend ログ確認
+docker logs chatbot-backend --tail 50 | grep "notification"
+```
 
-## 💬 获取帮助
+## 📚 詳細ドキュメント
 
-- 查看故障排除: `../docs/done/notification/NOVU_IMPLEMENTATION_GUIDE.md` 第10章
-- Novu官方文档: https://docs.novu.co
-- Novu Discord: https://discord.gg/novu
+- **[WEBSOCKET_FINAL_CONFIG.md](./done/WEBSOCKET_FINAL_CONFIG.md)** - 完全な設定ガイド
+- **[README.md](./README.md)** - プロジェクト概要
+
+## 💬 サポート
+
+問題が解決しない場合:
+
+1. `done/WEBSOCKET_FINAL_CONFIG.md` のトラブルシューティングセクションを参照
+2. Backend と Novu WS のログを確認
+3. Novu 公式ドキュメント: <https://docs.novu.co>
 
 ---
 
-**预计完成时间:** 5分钟  
-**难度:** ⭐⭐☆☆☆ (简单)  
-**最后更新:** 2026-01-21
+**所要時間**: 5分  
+**難易度**: ⭐⭐☆☆☆ (簡単)  
+**最終更新**: 2026-01-22

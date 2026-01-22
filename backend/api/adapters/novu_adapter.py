@@ -5,8 +5,9 @@ import os
 import logging
 import hmac
 import hashlib
+import jwt
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from novu.api import EventApi, SubscriberApi
 from novu.dto import SubscriberDto, TopicDto
@@ -21,7 +22,8 @@ class NovuAdapter:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        backend_url: Optional[str] = None
+        backend_url: Optional[str] = None,
+        jwt_secret: Optional[str] = None
     ):
         """
         Novuアダプターの初期化
@@ -29,9 +31,11 @@ class NovuAdapter:
         Args:
             api_key: Novu API Key (環境変数NOVU_API_KEYから取得可能)
             backend_url: Novu Backend URL (環境変数NOVU_API_URLから取得可能)
+            jwt_secret: Novu JWT Secret (環境変数NOVU_JWT_SECRETから取得可能)
         """
         self.api_key = api_key or os.getenv("NOVU_API_KEY")
         self.backend_url = backend_url or os.getenv("NOVU_API_URL", "http://localhost:3000")
+        self.jwt_secret = jwt_secret or os.getenv("NOVU_JWT_SECRET")
         
         if not self.api_key:
             raise ValueError("Novu API key is required. Set NOVU_API_KEY environment variable.")
@@ -49,25 +53,56 @@ class NovuAdapter:
         )
         
         logger.info(f"NovuAdapter initialized with backend URL: {self.backend_url}")
+        if self.jwt_secret:
+            logger.info("JWT Secret configured for WebSocket authentication")
     
-    def get_subscriber_token(self, subscriber_id: str) -> str:
+    def get_subscriber_token(
+        self, 
+        subscriber_id: str, 
+        environment_id: str = '6970876109344bb9ae9c0a63',
+        organization_id: str = '6970876109344bb9ae9c0a5c'
+    ) -> str:
         """
-        Subscriber用のHMAC tokenを生成
+        Subscriber用のJWT tokenを生成（Novu WebSocket認証用）
         
         Args:
             subscriber_id: 購読者ID
+            environment_id: 環境ID（デフォルト: Development環境のID）
+            organization_id: 組織ID（デフォルト: 組織のID）
             
         Returns:
-            HMAC token文字列
+            JWT token文字列
         """
-        # Novu API KeyをシークレットとしてHMAC-SHA256でトークンを生成
-        message = subscriber_id.encode('utf-8')
-        secret = self.api_key.encode('utf-8')
+        if not self.jwt_secret:
+            raise ValueError("JWT Secret is required for WebSocket authentication. Set NOVU_JWT_SECRET environment variable.")
         
-        hmac_hash = hmac.new(secret, message, hashlib.sha256)
-        token = hmac_hash.hexdigest()
+        # Novu データベースから subscriber の MongoDB ObjectId を取得
+        try:
+            subscriber = self.subscriber_api.get(subscriber_id)
+            # SubscriberDto オブジェクトから _id を取得
+            subscriber_object_id = getattr(subscriber, '_id', None) or subscriber_id
+            logger.info(f"Retrieved subscriber ObjectId: {subscriber_object_id} for subscriberId: {subscriber_id}")
+        except Exception as e:
+            logger.error(f"Failed to get subscriber ObjectId for {subscriber_id}: {e}")
+            # フォールバック: subscriberId をそのまま使用
+            subscriber_object_id = subscriber_id
         
-        logger.info(f"Generated subscriber token for: {subscriber_id}")
+        # JWT payload - Novuが期待する形式
+        # 重要: _id フィールドに MongoDB ObjectId を設定
+        # Novu WS は JWT 解析後、subscriber._id を使って WebSocket 房間に join する
+        payload = {
+            '_id': subscriber_object_id,  # MongoDB ObjectId（Novu が房間 ID として使用）
+            '_environmentId': environment_id,
+            '_organizationId': organization_id,
+            'aud': 'widget_user',  # 必須！Novuはこれをチェックする
+            'exp': datetime.utcnow() + timedelta(hours=24),
+            'iat': datetime.utcnow()
+        }
+        
+        # JWT tokenを生成
+        token = jwt.encode(payload, self.jwt_secret, algorithm='HS256')
+        
+        logger.info(f"Generated JWT subscriber token for: {subscriber_id} (_id: {subscriber_object_id})")
         return token
     
     def create_subscriber(

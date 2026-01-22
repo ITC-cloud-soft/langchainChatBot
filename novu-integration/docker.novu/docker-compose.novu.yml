@@ -69,6 +69,9 @@ services:
       TZ: Asia/Tokyo  # 日本時間
       PORT: 3002
       
+      # JWT認証（WebSocket接続用）
+      JWT_SECRET: ${JWT_SECRET:-IhkmjMDFgvYO63NXBvLvCo1ywL47RY7HTHMG9WwQnhM=}
+      
       # MongoDB
       MONGO_URL: mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-root}@novu-mongo:27017/novu-db?authSource=admin
       

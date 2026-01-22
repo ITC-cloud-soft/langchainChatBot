@@ -335,12 +335,25 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
                       fontSize: '0.75rem',
                     }}
                   >
-                    {new Date(item.createdAt).toLocaleString('ja-JP', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    {(() => {
+                      // createdAt または created_at フィールドを取得
+                      const dateStr = item.createdAt || (item as any).created_at;
+                      if (!dateStr) return '';
+                      
+                      try {
+                        const date = new Date(dateStr);
+                        if (isNaN(date.getTime())) return '';
+                        
+                        return date.toLocaleString('ja-JP', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        });
+                      } catch (e) {
+                        return '';
+                      }
+                    })()}
                   </Typography>
                   {isUnread && (
                     <Box
