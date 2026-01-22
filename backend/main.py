@@ -18,6 +18,7 @@ load_dotenv()
 
 # Import routers
 from api.routes import chat, llm_config, knowledge, config, embedding_config, auth, users, ars_settings
+from api.controllers import notification_controller
 from api.core.config_manager import settings
 from api.core.config_watcher import config_updater
 from api.core.database import initialize_database_on_startup, cleanup_database_on_shutdown, database_manager, check_database_health
@@ -141,6 +142,9 @@ app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 
 # User management routes (require authentication, admin for write)
 app.include_router(users.router, prefix="/api/users", tags=["users"])
+
+# Notification routes (require authentication)
+app.include_router(notification_controller.router, prefix="/api/notifications", tags=["notifications"])
 
 # Existing routes (will be updated for tenant context)
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])

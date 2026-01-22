@@ -71,6 +71,11 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
       content_preview: content.substring(0, 100)
     });
     
+    // 状態をリセット
+    setFlowData(null);
+    setExecutionResult(null);
+    setExecutionError(null);
+    
     // metadataにparams定義がある場合は、それを使用
     if (metadata?.params && metadata?.flow_id) {
       console.log('[ChatMessageWithForm] Using params from metadata:', metadata.params);
@@ -89,6 +94,7 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
         console.log('[ChatMessageWithForm] Parsed params from content:', parsed);
         setFlowData(parsed);
       }
+      return;
     }
     
     // メッセージがFlow実行結果かチェック
@@ -98,7 +104,7 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
         setExecutionResult(parsed);
       }
     }
-  }, [content, role, metadata]);
+  }, [content, role, metadata, messageId]);
 
   const handleFlowSubmit = async (flowId: string, values: Record<string, any>) => {
     try {
@@ -202,7 +208,7 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
     return (
       <Box sx={{ mb: 2 }}>
         <Alert severity="error">
-          ❌ 実行失敗: {executionError}
+          実行失敗: {executionError}
         </Alert>
       </Box>
     );
@@ -213,11 +219,29 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
     <Box
       sx={{
         mb: 2,
-        p: 1.5,
-        borderRadius: 2,
-        backgroundColor: role === 'user' ? '#e3f2fd' : '#f5f5f5',
+        p: { xs: 1.5, sm: 2.5 },
+        backgroundColor: '#ffffff',
+        borderRadius: role === 'user' ? '20px 20px 6px 20px' : '20px 20px 20px 6px',
+        border: '2px solid transparent',
+        backgroundImage: role === 'user'
+          ? 'linear-gradient(white, white), linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+          : 'linear-gradient(white, white), linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+        backgroundOrigin: 'border-box',
+        backgroundClip: 'padding-box, border-box',
+        boxShadow: role === 'user' 
+          ? '0 8px 32px rgba(102, 126, 234, 0.3)'
+          : '0 8px 32px rgba(17, 153, 142, 0.3)',
         maxWidth: '80%',
         alignSelf: role === 'user' ? 'flex-end' : 'flex-start',
+        color: '#000000',
+        wordBreak: 'break-word',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        '&:hover': {
+          transform: 'translateY(-2px) scale(1.02)',
+          boxShadow: role === 'user'
+            ? '0 12px 40px rgba(102, 126, 234, 0.4)'
+            : '0 12px 40px rgba(17, 153, 142, 0.4)',
+        },
       }}
     >
       <ReactMarkdown>{content}</ReactMarkdown>

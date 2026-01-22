@@ -62,7 +62,7 @@ export const FlowResultDisplay: React.FC<FlowResultDisplayProps> = ({
     return (
       <Alert severity="error" sx={{ mt: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold">
-          ❌ Flow {flowId} 実行失敗
+          Flow {flowId} 実行失敗
         </Typography>
         <Typography variant="body2" sx={{ mt: 1 }}>
           {error || '不明なエラーが発生しました'}
@@ -78,7 +78,7 @@ export const FlowResultDisplay: React.FC<FlowResultDisplayProps> = ({
     return (
       <Alert severity="success" sx={{ mt: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold">
-          ✅ Flow {flowId} 実行成功!
+          Flow {flowId} 実行成功!
         </Typography>
       </Alert>
     );
@@ -88,7 +88,7 @@ export const FlowResultDisplay: React.FC<FlowResultDisplayProps> = ({
     <Box sx={{ mt: 2 }}>
       <Alert severity="success" icon={<CheckCircleIcon />} sx={{ mb: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold">
-          ✅ Flow {flowId} 実行成功!
+          Flow {flowId} 実行成功!
         </Typography>
       </Alert>
 

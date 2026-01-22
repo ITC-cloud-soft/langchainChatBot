@@ -23,6 +23,7 @@ MANIFEST
 
 # Virtual Environment
 .env
+.env.novu
 .venv
 env/
 venv/
