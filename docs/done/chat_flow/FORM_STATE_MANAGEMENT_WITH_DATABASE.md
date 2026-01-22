@@ -348,6 +348,30 @@ const isReadonly = !isEditable;
 
 ---
 
+#### 3.2.5 フロントエンド表示の重複記号削除
+
+**目的**: Material-UI の Alert コンポーネントが自動的にアイコンを表示するため、テキスト内の重複した ✅ と ❌ を削除
+
+**修正ファイル**:
+
+1. **FlowResultDisplay.tsx**
+   - 成功メッセージから ✅ を削除（2箇所）
+   - 失敗メッセージから ❌ を削除（1箇所）
+
+2. **ARSFlowForm.tsx**
+   - 状態メッセージから ✅ と ❌ を削除（3箇所）
+   - Alert コンポーネントの severity 属性が自動的にアイコンを表示
+
+3. **ChatMessageWithForm.tsx**
+   - エラーメッセージから ❌ を削除（1箇所）
+
+**理由**:
+- バックエンドが返す ✅/❌ は正規表現マッチングに必要（機能的）
+- フロントエンドの ✅/❌ は装飾的で Alert アイコンと重複
+- Alert コンポーネントが `severity="success"` で ✅、`severity="error"` で ❌ を自動表示
+
+---
+
 ## 4. データフロー
 
 ### 4.1 表单生成から完了までのフロー
@@ -663,7 +687,7 @@ docker-compose restart chatbot-frontend
 
 ---
 
-## 10. 参考資料
+## 8. 参考資料
 
 - [FLOW_EXECUTION_WITH_PARAMETERS.md](./FLOW_EXECUTION_WITH_PARAMETERS.md) - Flow実行の基本仕様
 - [TWO_STAGE_FLOW_EXECUTION.md](./TWO_STAGE_FLOW_EXECUTION.md) - 2段階実行の詳細

@@ -247,7 +247,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
       case 'submitted':
         return (
           <Alert severity="success" sx={{ mt: 2 }}>
-            ✅ パラメータが送信されました。実行結果をお待ちください...
+            パラメータが送信されました。実行結果をお待ちください...
           </Alert>
         );
       case 'cancelled':
@@ -259,13 +259,13 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
       case 'completed':
         return (
           <Alert severity="success" sx={{ mt: 2 }}>
-            ✅ 実行が完了しました。
+            実行が完了しました。
           </Alert>
         );
       case 'error':
         return (
           <Alert severity="error" sx={{ mt: 2 }}>
-            ❌ 実行中にエラーが発生しました。
+            実行中にエラーが発生しました。
           </Alert>
         );
       default:

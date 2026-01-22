@@ -2,7 +2,7 @@ import axios, { AxiosResponse, AxiosError } from 'axios';
 import { logger } from '../utils/logger';
 
 // API base URL - in development, this will be proxied to the backend
-const API_BASE_URL = (import.meta as any).env.VITE_API_URL ?? 'http://localhost:8000';
+const API_BASE_URL = (import.meta as any).env.VITE_API_URL ?? '';
 
 // Test timeout for LLM/Embedding config tests (in milliseconds)
 // Default: 120 seconds for local models that may take time to start

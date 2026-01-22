@@ -28,6 +28,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import NotificationBell from './NotificationBell';
 
 const drawerWidth = 240;
 
@@ -146,6 +147,8 @@ const AppBarContent: React.FC<AppBarContentProps> = memo(
               {user?.username}
             </Typography>
           </Box>
+          {/* Novu通知ベル */}
+          {user?.user_id && <NotificationBell userId={String(user.user_id)} />}
           <IconButton
             size="large"
             aria-label="account of current user"
