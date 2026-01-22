@@ -152,6 +152,7 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
     (item: any) => {
       const isUnread = !item.read;
       const isWorkflowRequest = item.payload?.type === 'workflow_request';
+      const hasButtons = item.payload?.buttons && item.payload.buttons.length > 0;
 
       return (
         <ListItem
@@ -159,11 +160,17 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
           onClick={() => handleNotificationClick(item)}
           sx={{
             cursor: 'pointer',
-            bgcolor: isUnread ? 'action.hover' : 'transparent',
+            bgcolor: isUnread ? 'rgba(25, 118, 210, 0.04)' : 'transparent',
             borderLeft: isUnread ? 4 : 0,
             borderColor: 'primary.main',
+            borderRadius: 1,
+            mb: 1,
+            mx: 1,
+            transition: 'all 0.2s ease',
             '&:hover': {
-              bgcolor: 'action.selected',
+              bgcolor: isUnread ? 'rgba(25, 118, 210, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+              transform: 'translateX(4px)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
             },
           }}
           secondaryAction={
@@ -171,6 +178,13 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
               edge="end"
               onClick={(e) => handleDelete(e, item._id)}
               size="small"
+              sx={{
+                opacity: 0.6,
+                '&:hover': {
+                  opacity: 1,
+                  color: 'error.main',
+                },
+              }}
             >
               <DeleteIcon />
             </IconButton>
@@ -178,20 +192,34 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
         >
           <ListItemText
             primary={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                 {isUnread && (
                   <Box
                     sx={{
-                      width: 8,
-                      height: 8,
+                      width: 10,
+                      height: 10,
                       borderRadius: '50%',
                       bgcolor: 'primary.main',
+                      boxShadow: '0 0 0 3px rgba(25, 118, 210, 0.2)',
+                      animation: isUnread ? 'pulse 2s infinite' : 'none',
+                      '@keyframes pulse': {
+                        '0%, 100%': {
+                          boxShadow: '0 0 0 3px rgba(25, 118, 210, 0.2)',
+                        },
+                        '50%': {
+                          boxShadow: '0 0 0 6px rgba(25, 118, 210, 0.1)',
+                        },
+                      },
                     }}
                   />
                 )}
                 <Typography
                   variant="body1"
-                  sx={{ fontWeight: isUnread ? 600 : 400 }}
+                  sx={{ 
+                    fontWeight: isUnread ? 600 : 400,
+                    color: isUnread ? 'text.primary' : 'text.secondary',
+                    fontSize: '0.95rem',
+                  }}
                 >
                   {item.payload?.title || item.content}
                 </Typography>
@@ -199,7 +227,15 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
             }
             secondary={
               <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                <Typography 
+                  variant="body2" 
+                  color="text.secondary" 
+                  sx={{ 
+                    mb: 1.5,
+                    lineHeight: 1.6,
+                    fontSize: '0.875rem',
+                  }}
+                >
                   {item.payload?.content || ''}
                 </Typography>
 
@@ -207,29 +243,128 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
                 {isWorkflowRequest && item.payload?.workflowData && (
                   <Box
                     sx={{
-                      p: 1,
-                      bgcolor: 'grey.100',
-                      borderRadius: 1,
-                      fontSize: '0.75rem',
-                      mb: 1,
+                      p: 1.5,
+                      bgcolor: 'background.paper',
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      fontSize: '0.8rem',
+                      mb: 1.5,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                     }}
                   >
-                    <div>WorkID: {item.payload.workflowData.WorkID}</div>
-                    <div>FlowName: {item.payload.workflowData.FlowName}</div>
-                    <div>申請者: {item.payload.workflowData.StarterName}</div>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 60 }}>
+                          WorkID:
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'primary.main', fontWeight: 500 }}>
+                          {item.payload.workflowData.WorkID}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 60 }}>
+                          フロー:
+                        </Typography>
+                        <Typography variant="caption">
+                          {item.payload.workflowData.FlowName}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 60 }}>
+                          申請者:
+                        </Typography>
+                        <Typography variant="caption">
+                          {item.payload.workflowData.StarterName}
+                        </Typography>
+                      </Box>
+                    </Box>
                   </Box>
                 )}
 
-                <Typography variant="caption" color="text.disabled">
-                  {new Date(item.createdAt).toLocaleString('ja-JP')}
-                </Typography>
+                {/* CTA ボタン - payload.buttons から取得 */}
+                {hasButtons && (
+                  <Box sx={{ display: 'flex', gap: 1, mt: 1.5, mb: 1 }}>
+                    {item.payload.buttons.map((button: any, index: number) => (
+                      <Button
+                        key={index}
+                        variant={button.type === 'primary' ? 'contained' : 'outlined'}
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const url = button.url;
+                          if (url) {
+                            if (url.startsWith('http')) {
+                              window.open(url, '_blank');
+                            } else {
+                              navigate(url);
+                            }
+                          }
+                          if (!item.read) {
+                            markAsRead(item._id);
+                          }
+                        }}
+                        sx={{
+                          flex: 1,
+                          textTransform: 'none',
+                          fontSize: '0.8rem',
+                          fontWeight: 500,
+                          py: 0.75,
+                          borderRadius: 1.5,
+                          boxShadow: button.type === 'primary' ? '0 2px 4px rgba(25, 118, 210, 0.2)' : 'none',
+                          '&:hover': {
+                            boxShadow: button.type === 'primary' 
+                              ? '0 4px 8px rgba(25, 118, 210, 0.3)' 
+                              : '0 2px 4px rgba(0, 0, 0, 0.1)',
+                            transform: 'translateY(-1px)',
+                          },
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        {button.content}
+                      </Button>
+                    ))}
+                  </Box>
+                )}
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                  <Typography 
+                    variant="caption" 
+                    sx={{ 
+                      color: 'text.disabled',
+                      fontSize: '0.75rem',
+                    }}
+                  >
+                    {new Date(item.createdAt).toLocaleString('ja-JP', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Typography>
+                  {isUnread && (
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.25,
+                        bgcolor: 'primary.main',
+                        color: 'white',
+                        borderRadius: 1,
+                        fontSize: '0.65rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      NEW
+                    </Box>
+                  )}
+                </Box>
               </Box>
             }
           />
         </ListItem>
       );
     },
-    [handleNotificationClick, handleDelete]
+    [handleNotificationClick, handleDelete, markAsRead, navigate]
   );
 
   return (

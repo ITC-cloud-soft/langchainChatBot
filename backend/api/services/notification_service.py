@@ -521,11 +521,27 @@ class NotificationService:
         flow_name = workflow_data.get("FlowName", "")
         starter_name = workflow_data.get("StarterName", "")
         
+        ssflow_url = os.getenv("SSFLOW_URL", "http://192.168.1.78:56145/wwwroot/login.html")
+        
         return {
             "title": "新しい承認リクエスト",
             "content": f"{starter_name}さんから{flow_name}の承認リクエストが届きました",
             "type": "workflow_request",
             "workflowData": workflow_data,
+            "workflowId": work_id,
+            "buttons": [
+                {
+                    "type": "primary",
+                    "content": "詳細を確認",
+                    "url": f"/api/approval/session/{work_id}"
+                },
+                {
+                    "type": "secondary",
+                    "content": "SSFlow へ移動",
+                    "url": ssflow_url
+                }
+            ],
+            "notificationType": "ssflow_approval",
             "actions": [
                 {
                     "id": "approve",
