@@ -6,6 +6,7 @@ services:
     env_file:
       - .env.novu
     environment:
+      TZ: Asia/Tokyo  # 日本時間
       PORT: 3000
       
       # MongoDB
@@ -37,7 +38,7 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       
     ports:
-      - "3000:3000"
+      - "3000:3000"  # 浏览器需要访问 API
     depends_on:
       novu-mongo:
         condition: service_healthy
@@ -65,7 +66,11 @@ services:
     env_file:
       - .env.novu
     environment:
+      TZ: Asia/Tokyo  # 日本時間
       PORT: 3002
+      
+      # MongoDB
+      MONGO_URL: mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-root}@novu-mongo:27017/novu-db?authSource=admin
       
       # Redis
       REDIS_HOST: novu-redis
@@ -73,13 +78,13 @@ services:
       REDIS_DB_INDEX: 2
       
     ports:
-      - "3002:3002"
+      - "3002:3002"  # 浏览器需要访问 WebSocket
     depends_on:
       novu-redis:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3002/health-check || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3002/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -99,6 +104,7 @@ services:
     env_file:
       - .env.novu
     environment:
+      TZ: Asia/Tokyo  # 日本時間
       # MongoDB
       MONGO_URL: mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-root}@novu-mongo:27017/novu-db?authSource=admin
       
@@ -135,8 +141,10 @@ services:
     image: ghcr.io/novuhq/novu/web:0.24.0
     container_name: novu-web
     environment:
-      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3000}
-      REACT_APP_WS_URL: ${REACT_APP_WS_URL:-http://localhost:3002}
+      TZ: Asia/Tokyo  # 日本時間
+      # 浏览器通过宿主机访问 API
+      REACT_APP_API_URL: http://localhost:3000
+      REACT_APP_WS_URL: http://localhost:3002
       REACT_APP_ENVIRONMENT: ${REACT_APP_ENVIRONMENT:-production}
       
     ports:
@@ -157,14 +165,17 @@ services:
     image: mongo:6.0
     container_name: novu-mongo
     environment:
+      TZ: Asia/Tokyo  # 日本時間
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-root}
       MONGO_INITDB_DATABASE: novu-db
     volumes:
       - novu-mongo-data:/data/db
       - ./mongo/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
-    ports:
-      - "27017:27017"
+    # ports:
+    #   - "27017:27017"  # 仅供 Novu 内部使用，不暴露到宿主机
+    expose:
+      - "27017"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
@@ -184,11 +195,15 @@ services:
   novu-redis:
     image: redis:7-alpine
     container_name: novu-redis
+    environment:
+      TZ: Asia/Tokyo  # 日本時間
     command: redis-server --appendonly yes
     volumes:
       - novu-redis-data:/data
-    ports:
-      - "6379:6379"
+    # ports:
+    #   - "6379:6379"  # 仅供 Novu 内部使用，不暴露到宿主机
+    expose:
+      - "6379"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -209,6 +224,7 @@ services:
     image: localstack/localstack:latest
     container_name: novu-localstack
     environment:
+      TZ: Asia/Tokyo  # 日本時間
       SERVICES: s3
       DEBUG: 1
       DATA_DIR: /tmp/localstack/data
@@ -216,8 +232,10 @@ services:
       AWS_SECRET_ACCESS_KEY: test
     volumes:
       - novu-localstack-data:/tmp/localstack
-    ports:
-      - "4566:4566"
+    # ports:
+    #   - "4566:4566"  # 仅供 Novu 内部使用，不暴露到宿主机
+    expose:
+      - "4566"
     restart: unless-stopped
     networks:
       - novu-network
@@ -240,6 +258,9 @@ volumes:
 networks:
   novu-network:
     driver: bridge
+    # internal: true  # ⚠️ 会阻止宿主机访问，暂时移除
     ipam:
       config:
         - subnet: 172.28.0.0/16
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"  # 禁用 NAT，限制外网访问
