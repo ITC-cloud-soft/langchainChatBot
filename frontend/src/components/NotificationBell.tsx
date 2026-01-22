@@ -104,7 +104,7 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
         enqueueSnackbar('通知の処理に失敗しました', { variant: 'error' });
       }
     },
-    [markAsRead, onNotificationClick, navigate, handleClose]
+    [markAsRead, onNotificationClick, navigate, handleClose, enqueueSnackbar]
   );
 
   // 通知を削除
@@ -119,7 +119,7 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
         enqueueSnackbar('通知の削除に失敗しました', { variant: 'error' });
       }
     },
-    [remove]
+    [remove, enqueueSnackbar]
   );
 
   // 全て既読
@@ -131,7 +131,7 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
       console.error('Failed to mark all as read:', err);
       enqueueSnackbar('一括既読に失敗しました', { variant: 'error' });
     }
-  }, [markAllAsRead]);
+  }, [markAllAsRead, enqueueSnackbar]);
 
   // スクロールで追加読み込み
   const handleScroll = useCallback(

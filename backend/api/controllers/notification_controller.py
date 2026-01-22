@@ -18,6 +18,10 @@ from api.schemas.notification import (
     SendSystemNotificationRequest,
     MarkReadRequest
 )
+from pydantic import BaseModel
+
+class SubscriberTokenResponse(BaseModel):
+    subscriberToken: str
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +83,23 @@ async def get_unread_count(
     except Exception as e:
         logger.error(f"Failed to get unread count: {str(e)}")
         raise HTTPException(status_code=500, detail="未読数の取得に失敗しました")
+
+
+@router.get("/subscriber-token", response_model=SubscriberTokenResponse)
+async def get_subscriber_token(
+    current_user = Depends(get_current_user),
+    novu_adapter: NovuAdapter = Depends(get_novu_adapter)
+):
+    """
+    Novu WebSocket接続用のsubscriber tokenを取得
+    """
+    try:
+        subscriber_id = str(current_user.user_id)
+        token = novu_adapter.get_subscriber_token(subscriber_id)
+        return {"subscriberToken": token}
+    except Exception as e:
+        logger.error(f"Failed to get subscriber token: {str(e)}")
+        raise HTTPException(status_code=500, detail="Subscriber tokenの取得に失敗しました")
 
 
 @router.post("/{notification_id}/read")

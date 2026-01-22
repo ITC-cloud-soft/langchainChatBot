@@ -280,67 +280,95 @@ export function useNovuNotifications(
     fetchNotifications(0, false);
     fetchUnreadCount();
 
-    // WebSocket接続（Novu WebSocketサーバーに接続）
-    const socket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
-      query: {
-        subscriberId,
-        applicationIdentifier,
-      },
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
-    });
+    // WebSocket接続用のsubscriber tokenを取得
+    const initWebSocket = async () => {
+      try {
+        // Backend APIからsubscriber tokenを取得
+        const tokenResponse = await fetch(
+          `${backendUrl}/api/notifications/subscriber-token`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+            },
+          }
+        );
 
-    socketRef.current = socket;
+        if (!tokenResponse.ok) {
+          console.error('Failed to get subscriber token:', tokenResponse.status);
+          return;
+        }
 
-    // 接続成功
-    socket.on('connect', () => {
-      console.log('✅ Novu WebSocket connected');
-    });
+        const { subscriberToken } = await tokenResponse.json();
 
-    // 新しい通知を受信
-    socket.on('notification_received', (notification: Notification) => {
-      console.log('📬 New notification received:', notification);
-      setNotifications((prev) => [notification, ...prev]);
-      setUnreadCount((prev) => prev + 1);
-
-      // ブラウザ通知を表示
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(notification.content, {
-          body: notification.payload?.content || '',
-          icon: '/logo.jpg',
+        // WebSocket接続（subscriber tokenを使用）
+        const socket = io(socketUrl, {
+          transports: ['websocket', 'polling'],
+          auth: {
+            token: subscriberToken,
+          },
+          reconnection: true,
+          reconnectionDelay: 1000,
+          reconnectionAttempts: 5,
         });
+
+        socketRef.current = socket;
+
+        // 接続成功
+        socket.on('connect', () => {
+          console.log('✅ Novu WebSocket connected');
+        });
+
+        // 新しい通知を受信
+        socket.on('notification_received', (notification: Notification) => {
+          console.log('📬 New notification received:', notification);
+          setNotifications((prev) => [notification, ...prev]);
+          setUnreadCount((prev) => prev + 1);
+
+          // ブラウザ通知を表示
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(notification.content, {
+              body: notification.payload?.content || '',
+              icon: '/logo.jpg',
+            });
+          }
+        });
+
+        // 通知が既読になった
+        socket.on('notification_read', (data: { notificationId: string }) => {
+          setNotifications((prev) =>
+            prev.map((n) =>
+              n._id === data.notificationId
+                ? { ...n, read: true, lastReadDate: new Date().toISOString() }
+                : n
+            )
+          );
+          setUnreadCount((prev) => Math.max(0, prev - 1));
+        });
+
+        // 接続エラー
+        socket.on('connect_error', (err) => {
+          console.error('❌ WebSocket connection error:', err);
+        });
+
+        // 切断
+        socket.on('disconnect', (reason) => {
+          console.log('🔌 WebSocket disconnected:', reason);
+        });
+      } catch (err) {
+        console.error('Failed to initialize WebSocket:', err);
       }
-    });
+    };
 
-    // 通知が既読になった
-    socket.on('notification_read', (data: { notificationId: string }) => {
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n._id === data.notificationId
-            ? { ...n, read: true, lastReadDate: new Date().toISOString() }
-            : n
-        )
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-    });
-
-    // 接続エラー
-    socket.on('connect_error', (err) => {
-      console.error('❌ WebSocket connection error:', err);
-    });
-
-    // 切断
-    socket.on('disconnect', (reason) => {
-      console.log('🔌 WebSocket disconnected:', reason);
-    });
+    initWebSocket();
 
     // クリーンアップ
     return () => {
-      socket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
     };
-  }, [subscriberId, applicationIdentifier, socketUrl, fetchNotifications, fetchUnreadCount]);
+  }, [subscriberId, applicationIdentifier, socketUrl, backendUrl, fetchNotifications, fetchUnreadCount]);
 
   // ブラウザ通知の許可をリクエスト
   useEffect(() => {

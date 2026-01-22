@@ -3,6 +3,8 @@ Novu Adapter - Novu APIとの通信を担当するアダプタークラス
 """
 import os
 import logging
+import hmac
+import hashlib
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
@@ -47,6 +49,26 @@ class NovuAdapter:
         )
         
         logger.info(f"NovuAdapter initialized with backend URL: {self.backend_url}")
+    
+    def get_subscriber_token(self, subscriber_id: str) -> str:
+        """
+        Subscriber用のHMAC tokenを生成
+        
+        Args:
+            subscriber_id: 購読者ID
+            
+        Returns:
+            HMAC token文字列
+        """
+        # Novu API KeyをシークレットとしてHMAC-SHA256でトークンを生成
+        message = subscriber_id.encode('utf-8')
+        secret = self.api_key.encode('utf-8')
+        
+        hmac_hash = hmac.new(secret, message, hashlib.sha256)
+        token = hmac_hash.hexdigest()
+        
+        logger.info(f"Generated subscriber token for: {subscriber_id}")
+        return token
     
     def create_subscriber(
         self,
