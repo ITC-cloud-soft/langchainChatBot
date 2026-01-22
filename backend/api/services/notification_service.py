@@ -27,6 +27,21 @@ class NotificationService:
         """
         self.novu = novu_adapter
         self.db = db_session
+        
+        # Novu API設定を一度だけ取得（環境変数必須）
+        self.novu_api_url = os.getenv("NOVU_API_URL")
+        if not self.novu_api_url:
+            raise ValueError(
+                "NOVU_API_URL environment variable is required. "
+                "Please set it to your Novu API endpoint (e.g., http://novu-api:3000 or https://api.novu.co)"
+            )
+        
+        self.novu_api_key = os.getenv("NOVU_API_KEY")
+        if not self.novu_api_key:
+            raise ValueError(
+                "NOVU_API_KEY environment variable is required. "
+                "Please set it to your Novu API key."
+            )
     
     def send_workflow_approval(
         self,
@@ -192,13 +207,10 @@ class NotificationService:
         """
         try:
             # Novu Messages APIから直接取得
-            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
-            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
-            
             response = requests.get(
-                f"{novu_api_url}/v1/messages",
+                f"{self.novu_api_url}/v1/messages",
                 headers={
-                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Authorization": f"ApiKey {self.novu_api_key}",
                     "Content-Type": "application/json"
                 },
                 params={
@@ -243,13 +255,10 @@ class NotificationService:
         """
         try:
             # Novu Messages APIから直接取得
-            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
-            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
-            
             response = requests.get(
-                f"{novu_api_url}/v1/messages",
+                f"{self.novu_api_url}/v1/messages",
                 headers={
-                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Authorization": f"ApiKey {self.novu_api_key}",
                     "Content-Type": "application/json"
                 },
                 params={
@@ -291,11 +300,8 @@ class NotificationService:
         """
         try:
             # Novu Subscribers APIで既読マーク
-            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
-            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
-            
             response = requests.post(
-                f"{novu_api_url}/v1/subscribers/{user_id}/messages/markAs",
+                f"{self.novu_api_url}/v1/subscribers/{user_id}/messages/markAs",
                 json={
                     "messageId": notification_id,
                     "mark": {
@@ -304,7 +310,7 @@ class NotificationService:
                     }
                 },
                 headers={
-                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Authorization": f"ApiKey {self.novu_api_key}",
                     "Content-Type": "application/json"
                 }
             )
@@ -337,11 +343,8 @@ class NotificationService:
         """
         try:
             # Novu Subscribers APIでseenマーク
-            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
-            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
-            
             response = requests.post(
-                f"{novu_api_url}/v1/subscribers/{user_id}/messages/markAs",
+                f"{self.novu_api_url}/v1/subscribers/{user_id}/messages/markAs",
                 json={
                     "messageId": notification_id,
                     "mark": {
@@ -349,7 +352,7 @@ class NotificationService:
                     }
                 },
                 headers={
-                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Authorization": f"ApiKey {self.novu_api_key}",
                     "Content-Type": "application/json"
                 }
             )
@@ -376,19 +379,15 @@ class NotificationService:
         """
         try:
             # まず未読通知を取得
-            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
-            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
-            
-            # 未読通知を取得
             response = requests.get(
-                f"{novu_api_url}/v1/messages",
+                f"{self.novu_api_url}/v1/messages",
                 params={
                     "subscriberId": user_id,
                     "page": 0,
                     "limit": 100  # 一度に最大100件
                 },
                 headers={
-                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Authorization": f"ApiKey {self.novu_api_key}",
                     "Content-Type": "application/json"
                 }
             )
@@ -406,7 +405,7 @@ class NotificationService:
                 if not message.get("read"):
                     message_id = message.get("_id")
                     mark_response = requests.post(
-                        f"{novu_api_url}/v1/subscribers/{user_id}/messages/markAs",
+                        f"{self.novu_api_url}/v1/subscribers/{user_id}/messages/markAs",
                         json={
                             "messageId": message_id,
                             "mark": {
@@ -415,7 +414,7 @@ class NotificationService:
                             }
                         },
                         headers={
-                            "Authorization": f"ApiKey {novu_api_key}",
+                            "Authorization": f"ApiKey {self.novu_api_key}",
                             "Content-Type": "application/json"
                         }
                     )
@@ -447,13 +446,10 @@ class NotificationService:
         """
         try:
             # Novu Messages APIで削除
-            novu_api_url = os.getenv("NOVU_API_URL", "http://localhost:3000")
-            novu_api_key = os.getenv("NOVU_API_KEY", "c47cfb7a083c4e27f9d1b523a20ed59f")
-            
             response = requests.delete(
-                f"{novu_api_url}/v1/messages/{notification_id}",
+                f"{self.novu_api_url}/v1/messages/{notification_id}",
                 headers={
-                    "Authorization": f"ApiKey {novu_api_key}",
+                    "Authorization": f"ApiKey {self.novu_api_key}",
                     "Content-Type": "application/json"
                 }
             )

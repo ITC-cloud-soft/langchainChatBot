@@ -6,10 +6,11 @@
 
 ```
 test/
-├── run_tests.py              # 統合テストスイート（メイン）
-├── test_welcome_workflow.py  # Welcome通知ワークフローテスト
-├── test_api_workflow.py      # API作成ワークフローテスト
-└── README.md                 # このファイル
+├── run_tests.py                   # 統合テストスイート（メイン）
+├── create_test_notifications.py   # テスト通知作成スクリプト
+├── test_welcome_workflow.py       # Welcome通知ワークフローテスト
+├── test_api_workflow.py           # API作成ワークフローテスト
+└── README.md                      # このファイル
 ```
 
 ## 🚀 使用方法
@@ -47,7 +48,43 @@ python run_tests.py --quick
 
 ---
 
-### 3. ワークフローテスト
+### 3. テスト通知の作成
+
+開発やテスト用に複数の通知を素早く作成できます：
+
+```bash
+python create_test_notifications.py
+```
+
+**作成される通知:**
+- 📘 情報通知（INFO）- 新機能のお知らせ
+- ✅ 成功通知（SUCCESS）- 処理完了メッセージ
+- ⚠️ 警告通知（WARNING）- 注意喚起
+- ❌ エラー通知（ERROR）- エラー報告
+- 📘 追加情報通知（INFO）
+
+このスクリプトは自動的に5種類の異なる通知を作成し、フロントエンドでの表示確認に便利です。
+
+**カスタマイズ方法:**
+
+スクリプト内の以下の部分を編集することで、通知内容をカスタマイズできます：
+
+```python
+# ユーザー情報の変更
+subscriber_id = "1"  # 対象ユーザーID
+user_name = "Admin User"  # 表示名
+
+# 通知タイプの追加・変更
+notifications = [
+    ("info", "カスタム情報"),
+    ("success", "カスタム成功"),
+    # 必要に応じて追加...
+]
+```
+
+---
+
+### 4. ワークフローテスト
 
 特定のワークフローをテストする場合は、個別のスクリプトを使用します：
 
@@ -211,6 +248,7 @@ def test_your_feature(self) -> bool:
 | 全通知一括既読マーク | ✅ | `run_tests.py` |
 | 通知削除 | ✅ | `run_tests.py` |
 | 通知送信 | ✅ | `run_tests.py` |
+| テスト通知作成 | ✅ | `create_test_notifications.py` |
 | Welcomeワークフロー | ✅ | `test_welcome_workflow.py` |
 | APIワークフロー | ✅ | `test_api_workflow.py` |
 
@@ -251,3 +289,5 @@ def test_your_feature(self) -> bool:
   - 重複テストファイルを削除
   - `run_tests.py`に統合
   - ワークフローテストを独立化
+  - `create_test_notifications.py`追加（テスト通知作成機能）
+  - localhost硬編码削除と環境変数必須化
