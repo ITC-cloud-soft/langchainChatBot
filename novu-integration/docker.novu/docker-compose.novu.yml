@@ -37,6 +37,9 @@ services:
       # Sentry (optional)
       SENTRY_DSN: ${SENTRY_DSN:-}
       
+      # CORS Configuration
+      CORS_ORIGINS: http://localhost:4200,http://192.168.1.78:4200,http://127.0.0.1:4200
+      
     ports:
       - "3000:3000"  # 浏览器需要访问 API
     depends_on:
@@ -143,12 +146,18 @@ services:
   novu-web:
     image: ghcr.io/novuhq/novu/web:0.24.0
     container_name: novu-web
+    env_file:
+      - .env.novu
     environment:
       TZ: Asia/Tokyo  # 日本時間
-      # 浏览器通过宿主机访问 API
-      REACT_APP_API_URL: http://localhost:3000
-      REACT_APP_WS_URL: http://localhost:3002
-      REACT_APP_ENVIRONMENT: ${REACT_APP_ENVIRONMENT:-production}
+      # 直接硬编码 URL (environment 会覆盖 env_file)
+      # 局域网访问配置
+      REACT_APP_API_URL: http://192.168.1.78:3000
+      REACT_APP_WS_URL: http://192.168.1.78:3002
+      REACT_APP_ENVIRONMENT: production
+      # 注意: 如果需要 localhost 访问,改为:
+      # REACT_APP_API_URL: http://localhost:3000
+      # REACT_APP_WS_URL: http://localhost:3002
       
     ports:
       - "4200:4200"
