@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import routers
-from api.routes import chat, llm_config, knowledge, config, embedding_config, auth, users, ars_settings
+from api.routes import chat, llm_config, knowledge, config, embedding_config, auth, users, ars_settings, internal_users
 from api.controllers import notification_controller
 from api.core.config_manager import settings
 from api.core.config_watcher import config_updater
@@ -142,6 +142,9 @@ app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 
 # User management routes (require authentication, admin for write)
 app.include_router(users.router, prefix="/api/users", tags=["users"])
+
+# Internal API routes (no authentication required, for SSFlow integration)
+app.include_router(internal_users.router, prefix="/api/internal/users", tags=["internal"])
 
 # Notification routes (require authentication)
 app.include_router(notification_controller.router, prefix="/api/notifications", tags=["notifications"])
