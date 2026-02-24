@@ -566,6 +566,20 @@ class ChatService(BaseService):
                         callbacks=[callback]
                     )
             
+            # vectorstore が未初期化の場合、再初期化を試みる
+            if qdrant_manager._initialized and not qdrant_manager.vectorstore:
+                self.log_info("vectorstore is None, attempting to re-initialize Qdrant manager")
+                try:
+                    qdrant_manager._initialized = False
+                    await qdrant_manager.initialize()
+                    if qdrant_manager.vectorstore:
+                        await self._setup_qa_chain()
+                        self.log_info("Qdrant re-initialization successful")
+                    else:
+                        self.log_warning("Qdrant re-initialization completed but vectorstore still None")
+                except Exception as reinit_e:
+                    self.log_warning(f"Qdrant re-initialization failed: {str(reinit_e)}")
+
             # Create temporary QA chain with streaming LLM
             if qdrant_manager._initialized and qdrant_manager.vectorstore:
                 # Create QA chain using helper method
@@ -622,7 +636,7 @@ class ChatService(BaseService):
                             params = json.loads(params_json)
                             self.log_info(f"[ARS REACT] User submitted params for flow {flow_id}, message_id: {form_message_id}, params: {params}")
                             
-                            # 更新表单状态为 'submitted'（使用消息中提供的message_id）
+                            # 更新表单状态为 'submitted'
                             if form_message_id and form_message_id != 'undefined':
                                 try:
                                     from api.models.database import update_message_form_status_async
@@ -645,22 +659,15 @@ class ChatService(BaseService):
                             result = json.loads(result_str)
                             
                             if result.get("success"):
-                                # 格式化执行结果
                                 result_data = result.get('result', {})
                                 result_data_obj = result_data.get('result_data', {})
-                                
-                                # 构建美观的结果显示
                                 formatted_result = f"✅ **Flow {flow_id} 実行成功!**\n\n"
-                                
-                                # 遍历result_data中的每个flow步骤
                                 for flow_name, steps in result_data_obj.items():
                                     formatted_result += f"### 📋 {flow_name}\n\n"
-                                    
                                     if isinstance(steps, list):
                                         for idx, step in enumerate(steps, 1):
                                             for step_name, step_data in step.items():
                                                 status = step_data.get('result', 'unknown')
-                                                
                                                 if status == 'success':
                                                     formatted_result += f"**ステップ {idx}: {step_name}** ✅\n"
                                                     if 'data' in step_data:
@@ -670,16 +677,12 @@ class ChatService(BaseService):
                                                     formatted_result += f"**ステップ {idx}: {step_name}** ❌\n"
                                                     formatted_result += f"- エラーコード: `{step_data.get('msgcode', 'N/A')}`\n"
                                                     formatted_result += f"- エラーメッセージ: {step_data.get('messages', 'Unknown error')}\n"
-                                                
                                                 if 'ts' in step_data:
                                                     formatted_result += f"- 実行時刻: {step_data['ts']}\n"
                                                 formatted_result += "\n"
-                                
-                                # 添加原始数据的折叠部分
                                 formatted_result += "\n<details>\n<summary>📊 詳細データを表示</summary>\n\n"
                                 formatted_result += f"```json\n{json.dumps(result_data, ensure_ascii=False, indent=2)}\n```\n"
                                 formatted_result += "</details>"
-                                
                                 full_response = formatted_result
                             else:
                                 full_response = f"❌ **Flow {flow_id}** 実行失敗: {result.get('error')}"
@@ -688,15 +691,34 @@ class ChatService(BaseService):
                             full_response = f"❌ パラメータ処理エラー: {str(e)}"
                     else:
                         # 检测JSON格式: {"id": "X", "type": "flow", "name": "..."}
-                        # 只处理type为flow的情况,忽略tool类型
                         pattern = r'\{\s*"id"\s*:\s*"?(\d+)"?\s*,\s*"type"\s*:\s*"flow"'
                         match = re.search(pattern, full_response)
                         
-                        # 如果JSON格式未匹配，尝试检测普通文本中的Flow ID引用
-                        # 例如: "Flow ID: 5" 或 "**Flow ID**: 5"
                         if not match:
                             text_pattern = r'\*\*Flow\s+ID\*\*\s*:\s*(\d+)'
                             match = re.search(text_pattern, full_response)
+                        
+                        # LLMがJSONを返さなかった場合、ユーザー入力とFlow名称のマッチングを試みる
+                        if not match:
+                            try:
+                                from api.services.providers.ars_provider import ARSServiceProvider as _ARSProvider
+                                import os as _os
+                                _ars_endpoint = _os.getenv("ARS_API_ENDPOINT", "http://ars-backend:5001")
+                                _ars_provider = _ARSProvider(api_endpoint=_ars_endpoint)
+                                _flows = await _ars_provider.get_tools({"ars_token": ars_token})
+                                _message_lower = message.strip().lower()
+                                for _flow in _flows:
+                                    _flow_name = str(_flow.get("name", "")).strip().lower()
+                                    _flow_id = str(_flow.get("id", ""))
+                                    if _flow_name and (_message_lower == _flow_name or _flow_name in _message_lower or _message_lower in _flow_name):
+                                        self.log_info(f"[ARS REACT] Flow name matched from user input: '{message}' -> flow_id={_flow_id}")
+                                        class _FakeMatch:
+                                            def __init__(self, fid): self._id = fid
+                                            def group(self, n): return self._id
+                                        match = _FakeMatch(_flow_id)
+                                        break
+                            except Exception as _e:
+                                self.log_warning(f"[ARS REACT] Flow name matching failed: {str(_e)}")
                     
                     if not param_match and match:
                         flow_id = match.group(1)
@@ -706,13 +728,13 @@ class ChatService(BaseService):
                             # 获取Flow的参数定义
                             from api.services.providers.ars_provider import ARSServiceProvider
                             import os
-                            
+
                             ars_endpoint = os.getenv("ARS_API_ENDPOINT", "http://ars-backend:5001")
                             provider = ARSServiceProvider(api_endpoint=ars_endpoint)
                             provider.set_api_key(ars_token)
-                            
+
                             context = {"ars_token": ars_token}
-                            
+
                             # 获取Flow名称
                             flows = await provider.get_tools(context)
                             flow_name = None
@@ -720,24 +742,24 @@ class ChatService(BaseService):
                                 if str(flow.get("id")) == str(flow_id):
                                     flow_name = flow.get("name")
                                     break
-                            
+
                             # 获取参数定义
                             params_result = await provider.get_flow_params(flow_id, context)
-                            
+
                             if params_result.get("success"):
                                 params = params_result.get("params", [])
-                                
+
                                 if params:
                                     # 有参数需要填写,返回表单
                                     full_response = f"📋 **{flow_name or f'Flow {flow_id}'}** を実行します\n\n"
                                     full_response += "以下のパラメータを入力してください:\n\n"
-                                    
+
                                     for param in params:
                                         param_name = param.get("api_param_name")
                                         param_type = param.get("param_type")
-                                        
+
                                         full_response += f"- **{param_name}** ({param_type})"
-                                        
+
                                         # オプション型の場合、選択肢を表示
                                         if param_type == "option" and param.get("option"):
                                             full_response += "\n  選択肢:\n"
@@ -745,11 +767,11 @@ class ChatService(BaseService):
                                                 full_response += f"  - {opt['option_label']} ({opt['option_value']})\n"
                                         else:
                                             full_response += "\n"
-                                    
+
                                     # メタデータとして flow_id と params を埋め込む
                                     full_response += f"\n---\n**Flow ID**: {flow_id}\n"
                                     full_response += "パラメータを入力後、再度送信してください。"
-                                    
+
                                     # 表単メッセージのメタデータを設定（初期状態: pending）
                                     form_metadata = {
                                         "form_status": "pending",
@@ -757,7 +779,7 @@ class ChatService(BaseService):
                                         "flow_name": flow_name,
                                         "params": params  # パラメータ定義も保存
                                     }
-                                    
+
                                     self.log_info(f"[ARS REACT] Returned param form for flow {flow_id}")
                                 else:
                                     # パラメータ不要、直接実行
@@ -765,20 +787,20 @@ class ChatService(BaseService):
                                     tool = ExecuteFlowTool(ars_token=ars_token)
                                     result_str = await tool._arun(flow_id=flow_id)
                                     result = json.loads(result_str)
-                                    
+
                                     if result.get("success"):
                                         full_response = f"✅ **{flow_name or f'Flow {flow_id}'}** 実行成功!\n\n実行結果:\n```json\n{json.dumps(result.get('result'), ensure_ascii=False, indent=2)}\n```"
                                     else:
                                         full_response = f"❌ **{flow_name or f'Flow {flow_id}'}** 実行失敗: {result.get('error')}"
-                                    
+
                                     self.log_info(f"[ARS REACT] Flow {flow_id} executed (no params required)")
                             else:
                                 full_response = f"❌ Flow {flow_id} のパラメータ取得に失敗しました: {params_result.get('error')}"
-                            
+
                         except Exception as e:
                             self.log_error(f"[ARS REACT] Error processing flow {flow_id}", e)
                             full_response = f"❌ Flow {flow_id} の処理中にエラーが発生しました: {str(e)}"
-                
+
                 if full_response:
                     # トークンを1文字ずつストリーミング
                     for i, char in enumerate(full_response):
@@ -834,33 +856,75 @@ class ChatService(BaseService):
                     "role": "assistant",
                     "content": full_response,
                     "timestamp": datetime.now().isoformat(),
-                    "source_documents": source_documents,
-                    "message_id": saved_message.get("message_id") if saved_message else None,
-                    "metadata": form_metadata
+                    "source_documents": []
                 }
                 self.chat_history[session_id].append(assistant_message_data)
                 
                 # Update cache
                 self._update_history_cache(session_id)
             else:
-                # Fallback to non-streaming response
-                response = "申し訳ありませんが、現在ストリーミング応答を利用できません。"
+                # vectorstore なしで直接 LLM を使って応答（RAG なしモード）
+                self.log_warning("vectorstore unavailable, falling back to direct LLM response without RAG")
+                from langchain.schema import HumanMessage, SystemMessage, AIMessage
+                
+                llm_messages = []
+                if system_prompt:
+                    llm_messages.append(SystemMessage(content=system_prompt))
+                
+                if session_id in self.chat_history:
+                    history_msgs = self.chat_history[session_id]
+                    max_history = self._get_max_history()
+                    for hist_msg in history_msgs[-(max_history * 2):-1]:
+                        if hist_msg["role"] == "user":
+                            llm_messages.append(HumanMessage(content=hist_msg["content"]))
+                        elif hist_msg["role"] == "assistant":
+                            llm_messages.append(AIMessage(content=hist_msg["content"]))
+                
+                llm_messages.append(HumanMessage(content=message))
+                
+                direct_response = ""
+                token_index = 0
+                async for chunk in streaming_llm.astream(llm_messages):
+                    token = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                    if token:
+                        direct_response += token
+                        yield {
+                            "type": "token",
+                            "token": token,
+                            "session_id": session_id,
+                            "index": token_index
+                        }
+                        token_index += 1
+                
+                self.log_info(f"Direct LLM response generated: {len(direct_response)} chars")
+                
+                saved_direct_message = None
+                try:
+                    saved_direct_message = await chat_history_service.add_message(
+                        session_id=session_id,
+                        role="assistant",
+                        content=direct_response,
+                        message_type="text",
+                        source_documents=[]
+                    )
+                except Exception as save_e:
+                    self.log_warning(f"Failed to save direct LLM message to database: {str(save_e)}")
+                
                 yield {
                     "type": "final",
-                    "response": response,
+                    "response": direct_response,
                     "source_documents": [],
-                    "session_id": session_id
+                    "session_id": session_id,
+                    "message_id": saved_direct_message.get("message_id") if saved_direct_message else None,
+                    "metadata": None
                 }
                 
-                # Add error response to history
                 self.chat_history[session_id].append({
                     "role": "assistant",
-                    "content": response,
+                    "content": direct_response,
                     "timestamp": datetime.now().isoformat(),
-                    "error": "Streaming not available"
+                    "source_documents": []
                 })
-                
-                # Update cache
                 self._update_history_cache(session_id)
         except Exception as e:
             self.log_error(f"Error streaming message for session {session_id}", e)

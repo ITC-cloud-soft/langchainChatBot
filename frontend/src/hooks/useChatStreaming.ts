@@ -97,6 +97,8 @@ export const useChatStreaming = ({
           content: string;
           metadata: Record<string, unknown>;
         }> = [];
+        let finalMessageId: string | null = null;
+        let finalMetadata: Record<string, any> | null = null;
 
         // ストリーミング処理
         try {
@@ -112,6 +114,8 @@ export const useChatStreaming = ({
             } else if (chunk.type === 'final') {
               fullResponse = chunk.response;
               sourceDocuments = chunk.source_documents || [];
+              finalMessageId = chunk.message_id || null;
+              finalMetadata = chunk.metadata || null;
               // 最終レスポンスで更新（message_idとmetadataを含める）
               onUpdateLastMessage({
                 content: fullResponse,
@@ -127,11 +131,13 @@ export const useChatStreaming = ({
           throw streamError;
         }
 
-        // ストリーミング終了後に最終メッセージを確定
+        // ストリーミング終了後に最終メッセージを確定（finalイベントで取得済みのmetadataとmessage_idを保持）
         if (fullResponse) {
           onUpdateLastMessage({
             content: fullResponse,
             sourceDocuments,
+            message_id: finalMessageId || undefined,
+            metadata: finalMetadata || undefined,
           });
         }
       } catch (error: any) {

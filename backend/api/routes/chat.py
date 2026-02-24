@@ -160,6 +160,22 @@ async def stream_message(
         if ars_token_obj:
             ars_token = ars_token_obj.token
             default_logger.info(f"[ARS DEBUG] ARS token retrieved for user {current_user.user_id}")
+            
+            # ARS Flow一覧を取得してsystem promptに追加
+            try:
+                import os
+                from api.services.providers.ars_provider import ARSServiceProvider
+                ars_endpoint = os.getenv("ARS_API_ENDPOINT", "http://ars-backend:5001")
+                ars_provider = ARSServiceProvider(api_endpoint=ars_endpoint)
+                flows = await ars_provider.get_tools({"ars_token": ars_token})
+                if flows:
+                    flow_prompt = ars_provider.to_react_prompt(flows)
+                    system_prompt = (system_prompt or "") + flow_prompt
+                    default_logger.info(f"[ARS DEBUG] Appended {len(flows)} flows to system prompt")
+                else:
+                    default_logger.info("[ARS DEBUG] No ARS flows available to append")
+            except Exception as ars_e:
+                default_logger.warning(f"[ARS DEBUG] Failed to fetch ARS flows: {str(ars_e)}")
     
     async def generate():
         async for chunk in chat_service.stream_message(

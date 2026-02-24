@@ -297,35 +297,39 @@ class ARSServiceProvider(ServiceProvider):
         Returns:
             ReAct用プロンプト文字列
         """
-        prompt = "\n## ARS利用可能フロー\n\n"
-        
         active_flows = [f for f in tools if f.get("active", True)]
         
+        prompt = "\n---\n## ⚠️ ARS フロー連携ルール（最優先）\n\n"
+        
+        prompt += "### 利用可能なフロー一覧\n\n"
         if not active_flows:
             prompt += "現在利用可能なフローはありません。\n"
-            return prompt
+        else:
+            for flow in active_flows:
+                flow_id = flow.get("id")
+                name = flow.get("name", f"Flow {flow_id}")
+                description = flow.get("description", "")
+                prompt += f"- **Flow {flow_id}**: {name}\n"
+                if description:
+                    prompt += f"  説明: {description}\n"
         
-        for flow in active_flows:
-            flow_id = flow.get("id")
-            name = flow.get("name", f"Flow {flow_id}")
-            description = flow.get("description", "")
-            
-            prompt += f"- **Flow {flow_id}**: {name}\n"
-            if description:
-                prompt += f"  説明: {description}\n"
-        
-        prompt += "\n### フロー実行方法\n\n"
-        prompt += "フローを実行する場合は、以下のJSON形式で返してください:\n\n"
+        prompt += "\n### 応答ルール\n\n"
+        prompt += "1. **フロー一覧の表示を求められた場合**（例：「フロー一覧」「どんなフローがある？」「利用できるフローを教えて」）:\n"
+        prompt += "   - 上記のフロー一覧をすべて会話形式で説明してください\n"
+        prompt += "   - **JSONは返さないでください**\n\n"
+        prompt += "2. **特定のフロー実行を求められた場合**（例：「〇〇フローを実行して」「△△申請をしたい」）:\n"
+        prompt += "   - 説明の後、以下のJSON形式を返してください:\n"
         prompt += "```json\n"
         prompt += '{\n'
-        prompt += '  "provider": "ARS",\n'
-        prompt += '  "type": "flow",\n'
         prompt += '  "id": <flow_id>,\n'
-        prompt += '  "name": "<flow_name>",\n'
-        prompt += '  "parameters": {}  // オプション\n'
+        prompt += '  "type": "flow",\n'
+        prompt += '  "name": "<flow_name>"\n'
         prompt += '}\n'
         prompt += "```\n\n"
-        prompt += "**重要**: `type`は必ず`\"flow\"`を使用してください。\n"
+        prompt += "3. **絶対禁止事項**:\n"
+        prompt += "   - `\"type\": \"tool\"` は使用禁止。必ず `\"type\": \"flow\"` を使用してください\n"
+        prompt += "   - フロー一覧を求められた場合に特定のフローのJSONを返すことは禁止です\n"
+        prompt += "   - 存在しないフローIDを使用することは禁止です\n"
         
         return prompt
     
