@@ -8,15 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from api.database import get_db_session
+from api.core.database import get_db_session
+from api.core.auth import PasswordManager
 from api.models.user import (
     get_user_by_username,
     get_user_by_email,
     get_user_by_id,
     create_user,
-    User
+    User,
+    UserRole
 )
-from api.utils.security import get_password_hash
 
 router = APIRouter()
 
@@ -34,7 +35,7 @@ class InternalUserCreateRequest(BaseModel):
     email: EmailStr
     full_name: str
     password: str
-    role: str = "user"
+    role: UserRole = UserRole.USER
 
 
 class InternalUserUpdateRequest(BaseModel):
@@ -63,6 +64,7 @@ async def check_user_exists(
 ):
     """
     ユーザーが存在するか確認する（認証不要）
+    ソフトデリート済みユーザーは exists=false として返す（POST で upsert させるため）
     
     Args:
         username: 確認するユーザー名
@@ -73,7 +75,8 @@ async def check_user_exists(
     """
     user = await get_user_by_username(db, username)
     
-    if user:
+    # アクティブなユーザーのみ exists=true とする
+    if user and user.is_active:
         return InternalUserCheckResponse(
             exists=True,
             user_id=user.id,
@@ -83,44 +86,91 @@ async def check_user_exists(
     return InternalUserCheckResponse(exists=False)
 
 
-@router.post("/", response_model=InternalUserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=InternalUserResponse)
 async def create_internal_user(
     user_data: InternalUserCreateRequest,
     db: AsyncSession = Depends(get_db_session)
 ):
     """
-    新規ユーザーを作成する（認証不要）
+    ユーザーを作成または復元・更新する（認証不要・upsert方式）
     SSFlowからの同期リクエスト用
+    
+    - ユーザーが存在しない場合: 新規作成（HTTP 201）
+    - ユーザーが存在する場合（ソフトデリート含む）: is_active を復元し
+      email / full_name を最新値で更新（HTTP 200）
     
     Args:
         user_data: ユーザー作成データ
         db: データベースセッション
         
     Returns:
-        作成されたユーザー情報
-        
-    Raises:
-        HTTPException: ユーザー名またはメールアドレスが既に存在する場合
+        作成または更新されたユーザー情報
     """
-    # ユーザー名の重複チェック
+    from fastapi.responses import JSONResponse
+    from datetime import datetime
+
+    # ユーザー名で既存ユーザーを検索（ソフトデリート含む）
     existing_user = await get_user_by_username(db, user_data.username)
+
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Username '{user_data.username}' already exists"
+        # --- 既存ユーザー（ソフトデリート含む）: 復元 + 情報更新 ---
+        changed = False
+
+        if not existing_user.is_active:
+            existing_user.is_active = True
+            changed = True
+
+        if existing_user.email != str(user_data.email):
+            # メールアドレス変更時は他ユーザーとの重複チェック
+            conflict = await get_user_by_email(db, user_data.email)
+            if conflict and conflict.id != existing_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Email '{user_data.email}' is already used by another user"
+                )
+            existing_user.email = str(user_data.email)
+            changed = True
+
+        if existing_user.full_name != user_data.full_name:
+            existing_user.full_name = user_data.full_name
+            changed = True
+
+        if changed:
+            existing_user.updated_at = datetime.now()
+            await db.commit()
+            await db.refresh(existing_user)
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "id": existing_user.id,
+                "username": existing_user.username,
+                "email": existing_user.email,
+                "full_name": existing_user.full_name,
+                "role": existing_user.role.value if hasattr(existing_user.role, "value") else existing_user.role,
+                "is_active": existing_user.is_active,
+            }
         )
-    
-    # メールアドレスの重複チェック
+
+    # --- 新規ユーザー作成 ---
+    # メールアドレスの重複チェック（同一emailが既存ユーザーに紐付いている場合はスキップして成功扱い）
     existing_email = await get_user_by_email(db, user_data.email)
     if existing_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Email '{user_data.email}' already exists"
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "id": existing_email.id,
+                "username": user_data.username,
+                "email": existing_email.email,
+                "full_name": user_data.full_name,
+                "role": existing_email.role.value if hasattr(existing_email.role, "value") else existing_email.role,
+                "is_active": existing_email.is_active,
+            }
         )
-    
+
     # パスワードのハッシュ化
-    hashed_password = get_password_hash(user_data.password)
-    
+    hashed_password = PasswordManager.hash_password(user_data.password)
+
     # ユーザー作成
     new_user = await create_user(
         db=db,
@@ -128,16 +178,19 @@ async def create_internal_user(
         email=user_data.email,
         hashed_password=hashed_password,
         full_name=user_data.full_name,
-        role=user_data.role
+        role=user_data.role if isinstance(user_data.role, UserRole) else UserRole(user_data.role)
     )
-    
-    return InternalUserResponse(
-        id=new_user.id,
-        username=new_user.username,
-        email=new_user.email,
-        full_name=new_user.full_name,
-        role=new_user.role.value,
-        is_active=new_user.is_active
+
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content={
+            "id": new_user.id,
+            "username": new_user.username,
+            "email": new_user.email,
+            "full_name": new_user.full_name,
+            "role": new_user.role.value if hasattr(new_user.role, "value") else new_user.role,
+            "is_active": new_user.is_active,
+        }
     )
 
 
