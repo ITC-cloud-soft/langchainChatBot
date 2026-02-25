@@ -44,6 +44,11 @@ class InternalUserUpdateRequest(BaseModel):
     full_name: str
 
 
+class InternalUserPasswordResetRequest(BaseModel):
+    """内部API用パスワードリセットリクエスト"""
+    password: str
+
+
 class InternalUserResponse(BaseModel):
     """内部API用ユーザーレスポンス"""
     id: int
@@ -153,19 +158,12 @@ async def create_internal_user(
         )
 
     # --- 新規ユーザー作成 ---
-    # メールアドレスの重複チェック（同一emailが既存ユーザーに紐付いている場合はスキップして成功扱い）
+    # メールアドレスの重複チェック（同一emailが既存ユーザーに紐付いている場合はエラー）
     existing_email = await get_user_by_email(db, user_data.email)
     if existing_email:
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "id": existing_email.id,
-                "username": user_data.username,
-                "email": existing_email.email,
-                "full_name": user_data.full_name,
-                "role": existing_email.role.value if hasattr(existing_email.role, "value") else existing_email.role,
-                "is_active": existing_email.is_active,
-            }
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Email '{user_data.email}' is already used by user '{existing_email.username}'"
         )
 
     # パスワードのハッシュ化
@@ -273,6 +271,52 @@ async def get_internal_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"User '{username}' not found"
         )
+    
+    return InternalUserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role.value,
+        is_active=user.is_active
+    )
+
+
+@router.post("/{username}/reset-password", response_model=InternalUserResponse)
+async def reset_internal_user_password(
+    username: str,
+    password_data: InternalUserPasswordResetRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    ユーザーのパスワードをリセットする（認証不要）
+    SSFlowからの同期リクエスト用
+    
+    Args:
+        username: パスワードをリセットするユーザー名
+        password_data: 新しいパスワード
+        db: データベースセッション
+        
+    Returns:
+        更新されたユーザー情報
+        
+    Raises:
+        HTTPException: ユーザーが存在しない場合
+    """
+    from datetime import datetime
+
+    user = await get_user_by_username(db, username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User '{username}' not found"
+        )
+    
+    user.hashed_password = PasswordManager.hash_password(password_data.password)
+    user.updated_at = datetime.now()
+    
+    await db.commit()
+    await db.refresh(user)
     
     return InternalUserResponse(
         id=user.id,
