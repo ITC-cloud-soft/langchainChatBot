@@ -492,7 +492,8 @@ class ChatService(BaseService):
         message: str,
         session_id: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        ars_token: Optional[str] = None
+        ars_token: Optional[str] = None,
+        current_user_name: Optional[str] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream a chat response"""
         self.ensure_initialized()
@@ -636,6 +637,37 @@ class ChatService(BaseService):
                             params = json.loads(params_json)
                             self.log_info(f"[ARS REACT] User submitted params for flow {flow_id}, message_id: {form_message_id}, params: {params}")
                             
+                            # FK_Flow が含まれる場合、SHAINBANGO/MainTblName 等を自動注入（notification_controller と同様）
+                            fk_flow = params.get("FK_Flow")
+                            if fk_flow and current_user_name:
+                                _FK_FLOW_TO_TABLE = {
+                                    "001": "TT_WF_MERCHANDISE_PLAN", "002": "TT_WF_ORDER",
+                                    "003": "TT_WF_ORDER_UNPLANNED", "004": "TT_WF_ARRIVAL_UNPLANNED",
+                                    "005": "TT_WF_ARRIVAL_RETURNS", "006": "TT_WF_MOVE_REQUEST",
+                                    "007": "TT_WF_STOCK_ADJUSTMENT", "008": "TT_WF_PRICE_CHANGE",
+                                    "009": "TT_WF_MREQ_ARRCORRECTION",
+                                }
+                                main_tbl_name = _FK_FLOW_TO_TABLE.get(fk_flow, "")
+                                params["SHAINBANGO"] = current_user_name
+                                params["MainTblName"] = main_tbl_name
+                                if "MainTblName_value" not in params:
+                                    # SSFlow申請フォームの必須フィールドを含むデフォルト値
+                                    _affiliation_info = json.dumps({
+                                        "APPLICANT_AFFILIATION": {
+                                            "COMPANY": "00000",
+                                            "KAISHACODE": "3618",
+                                            "BUSHOCODE": "0008027040"
+                                        }
+                                    }, ensure_ascii=False)
+                                    _tbl_value = {
+                                        "AFFILIATION_INFO": _affiliation_info,
+                                        "COMMENT": "",
+                                        "SUMMRY": "",
+                                        "UPLOAD_FILES": ""
+                                    }
+                                    params["MainTblName_value"] = json.dumps(_tbl_value, ensure_ascii=False)
+                                self.log_info(f"[ARS REACT] Injected SHAINBANGO={current_user_name}, MainTblName={main_tbl_name}")
+                            
                             # 更新表单状态为 'submitted'
                             if form_message_id and form_message_id != 'undefined':
                                 try:
@@ -657,7 +689,7 @@ class ChatService(BaseService):
                             tool = ExecuteFlowTool(ars_token=ars_token)
                             result_str = await tool._arun(flow_id=flow_id, parameters=params)
                             result = json.loads(result_str)
-                            
+
                             if result.get("success"):
                                 result_data = result.get('result', {})
                                 result_data_obj = result_data.get('result_data', {})
@@ -747,7 +779,9 @@ class ChatService(BaseService):
                             params_result = await provider.get_flow_params(flow_id, context)
 
                             if params_result.get("success"):
-                                params = params_result.get("params", [])
+                                # UserNo/SHAINBANGO はchatbot側が自動送信するため除外
+                                _auto_params = {"UserNo", "SHAINBANGO", "MainTblName"}
+                                params = [p for p in params_result.get("params", []) if p.get("api_param_name") not in _auto_params]
 
                                 if params:
                                     # 有参数需要填写,返回表单

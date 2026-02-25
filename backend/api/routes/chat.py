@@ -182,7 +182,8 @@ async def stream_message(
             message=chat_message.message,
             session_id=chat_message.session_id,
             system_prompt=system_prompt,
-            ars_token=ars_token
+            ars_token=ars_token,
+            current_user_name=current_user.username if current_user else None
         ):
             try:
                 # JSONシリアライズ時に適切なエンコーディングを保証

@@ -1,0 +1,14 @@
+{
+  "_comment": "CCFLOWフロー設定ファイル。FK_Flow -> label/MainTblName のマッピングを定義します。",
+  "flows": [
+    { "fk_flow": "001", "label": "商品計画申請",       "main_tbl_name": "TT_WF_MERCHANDISE_PLAN"    },
+    { "fk_flow": "002", "label": "発注申請",             "main_tbl_name": "TT_WF_ORDER"               },
+    { "fk_flow": "003", "label": "計画外発注申請",       "main_tbl_name": "TT_WF_ORDER_UNPLANNED"     },
+    { "fk_flow": "004", "label": "計画外入荷申請",       "main_tbl_name": "TT_WF_ARRIVAL_UNPLANNED"   },
+    { "fk_flow": "005", "label": "返品入荷申請",         "main_tbl_name": "TT_WF_ARRIVAL_RETURNS"     },
+    { "fk_flow": "006", "label": "移動依頼申請",         "main_tbl_name": "TT_WF_MOVE_REQUEST"        },
+    { "fk_flow": "007", "label": "在庫調整申請",         "main_tbl_name": "TT_WF_STOCK_ADJUSTMENT"    },
+    { "fk_flow": "008", "label": "価格変更申請",         "main_tbl_name": "TT_WF_PRICE_CHANGE"        },
+    { "fk_flow": "009", "label": "入荷修正依頼申請",     "main_tbl_name": "TT_WF_MREQ_ARRCORRECTION" }
+  ]
+}

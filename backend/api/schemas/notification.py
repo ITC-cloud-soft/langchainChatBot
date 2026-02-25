@@ -68,3 +68,10 @@ class SSFlowApprovalActionRequest(BaseModel):
     ars_params: Dict[str, Any] = Field(..., description="SSFlow arsParams")
     action: str = Field(..., description="承認: approve / 否認: deny")
     comment: Optional[str] = Field("", description="コメント")
+
+
+class SSFlowSubmitActionRequest(BaseModel):
+    """SSFlow申請アクションリクエスト（ARS Flow 10 共通テンプレート用）"""
+    fk_flow: str = Field(..., description="SSFlowフローID（例: '001'〜'009'）")
+    form_data: Dict[str, Any] = Field(..., description="フォームデータ（MainTblName テーブルの内容）")
+    comment: Optional[str] = Field("", description="コメント")

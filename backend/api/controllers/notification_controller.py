@@ -17,7 +17,8 @@ from api.schemas.notification import (
     SendWorkflowApprovalRequest,
     SendSystemNotificationRequest,
     MarkReadRequest,
-    SSFlowApprovalActionRequest
+    SSFlowApprovalActionRequest,
+    SSFlowSubmitActionRequest
 )
 from api.models.user import get_ars_token_by_user
 from pydantic import BaseModel
@@ -32,6 +33,44 @@ class SubscriberTokenResponse(BaseModel):
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# SSFlow FK_Flow → ARS Flow ID マッピング
+# Flow 10: 全ワークフロー共通申請テンプレート（tool 20→21）
+# ※ Flow 5 (001専用) / Flow 6 (005専用) は参照例として別途存在するが、こちらでは使用しない
+_CCFLOW_FLOW_MAPPING = {
+    "001": 10, "002": 10, "003": 10, "004": 10, "005": 10,
+    "006": 10, "007": 10, "008": 10, "009": 10,
+}
+
+# SSFlow FK_Flow → MainTblName マッピング（SSFlow DB WF_Flow.PTable より）
+_FK_FLOW_TO_TABLE = {
+    "001": "TT_WF_MERCHANDISE_PLAN",
+    "002": "TT_WF_ORDER",
+    "003": "TT_WF_ORDER_UNPLANNED",
+    "004": "TT_WF_ARRIVAL_UNPLANNED",
+    "005": "TT_WF_ARRIVAL_RETURNS",
+    "006": "TT_WF_MOVE_REQUEST",
+    "007": "TT_WF_STOCK_ADJUSTMENT",
+    "008": "TT_WF_PRICE_CHANGE",
+    "009": "TT_WF_MREQ_ARRCORRECTION",
+}
+
+
+async def _call_ars_flow(ars_endpoint: str, ars_api_key: str, flow_id: int, params: dict) -> dict:
+    """ARS /execute を呼び出す共通ヘルパー（申請・承認共用）"""
+    ars_payload = {"id": flow_id, "type": "flow", "params": params}
+    ars_req = urllib.request.Request(
+        f"{ars_endpoint}/execute",
+        data=json.dumps(ars_payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": ars_api_key,
+        }
+    )
+    with urllib.request.urlopen(ars_req, timeout=30) as resp:
+        resp_body = resp.read().decode("utf-8")
+    return json.loads(resp_body)
 
 
 def get_novu_adapter() -> NovuAdapter:
@@ -409,20 +448,14 @@ async def approval_action(
             }
         }
 
-        ars_req = urllib.request.Request(
-            f"{ars_endpoint}/execute",
-            data=json.dumps(ars_payload).encode("utf-8"),
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "X-API-Key": ars_api_key,
-            }
-        )
-
         try:
-            with urllib.request.urlopen(ars_req, timeout=30) as resp:
-                resp_body = resp.read().decode("utf-8")
-            logger.info(f"ARS flow 8 approval action [{request.action}] by {current_user.username}: {resp_body}")
+            resp_data = await _call_ars_flow(
+                ars_endpoint=ars_endpoint,
+                ars_api_key=ars_api_key,
+                flow_id=8,
+                params=ars_payload["params"]
+            )
+            logger.info(f"ARS flow 8 approval action [{request.action}] by {current_user.username}: {resp_data}")
             return {"result": "success", "message": f"{action_label}処理が完了しました"}
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8") if e.fp else str(e)
@@ -434,3 +467,103 @@ async def approval_action(
     except Exception as e:
         logger.error(f"Approval action failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"承認処理に失敗しました: {str(e)}")
+
+
+@router.get("/flow-options")
+async def get_flow_options(
+    current_user = Depends(get_current_user)
+):
+    """
+    CCFLOWフロー選択肢を返す（ccflow_flows.json から読み込み）
+
+    レスポンス例:
+    [
+      {"fk_flow": "001", "label": "商品計画申請", "main_tbl_name": "TT_WF_MERCHANDISE_PLAN"},
+      ...
+    ]
+    """
+    config_path = os.path.join(os.path.dirname(__file__), "..", "config", "ccflow_flows.json")
+    config_path = os.path.normpath(config_path)
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("flows", [])
+    except FileNotFoundError:
+        logger.warning(f"ccflow_flows.json not found at {config_path}, returning defaults")
+        return [{"fk_flow": k, "label": k, "main_tbl_name": v} for k, v in _FK_FLOW_TO_TABLE.items()]
+    except Exception as e:
+        logger.error(f"Failed to read ccflow_flows.json: {e}")
+        raise HTTPException(status_code=500, detail=f"フロー設定の読み込みに失敗しました: {str(e)}")
+
+
+@router.post("/submit-action")
+async def submit_action(
+    request: SSFlowSubmitActionRequest,
+    current_user = Depends(get_current_user),
+    db = Depends(get_db_session)
+):
+    """
+    SSFlow申請アクションを実行する（ARS Flow 10 共通テンプレート経由）
+
+    - **fk_flow**: SSFlowフローID（例: '001'〜'009'）
+    - **form_data**: フォームデータ（MainTblName テーブルの内容）
+    - **comment**: コメント（オプション）
+    """
+    try:
+        fk_flow = request.fk_flow
+        if fk_flow not in _FK_FLOW_TO_TABLE:
+            raise HTTPException(status_code=400, detail=f"不正な FK_Flow: {fk_flow}")
+
+        flow_id = _CCFLOW_FLOW_MAPPING[fk_flow]
+        main_tbl_name = _FK_FLOW_TO_TABLE[fk_flow]
+
+        ars_endpoint = os.environ.get("ARS_API_ENDPOINT", "http://ars-backend:5050")
+
+        ars_token_obj = await get_ars_token_by_user(db, current_user.user_id)
+        if not ars_token_obj or not ars_token_obj.token:
+            raise HTTPException(status_code=400, detail="ARS APIキーが設定されていません。ARS設定画面でAPIキーを登録してください。")
+
+        ars_api_key = ars_token_obj.token
+
+        # コメントをフォームデータにマージ
+        form_data = dict(request.form_data)
+        if request.comment:
+            form_data["WFComment"] = request.comment
+        params = {
+            "SHAINBANGO":        current_user.username,
+            "FK_Flow":           fk_flow,
+            "MainTblName":       main_tbl_name,
+            "MainTblName_value": json.dumps(form_data, ensure_ascii=False),
+        }
+
+        try:
+            resp_data = await _call_ars_flow(
+                ars_endpoint=ars_endpoint,
+                ars_api_key=ars_api_key,
+                flow_id=flow_id,
+                params=params
+            )
+            logger.info(f"ARS flow {flow_id} submit action [FK_Flow={fk_flow}] by {current_user.username}: {resp_data}")
+
+            # レスポンスから WorkID を抽出
+            work_id = ""
+            steps = resp_data.get("steps", [])
+            if steps:
+                last_step = steps[-1]
+                work_id = str(last_step.get("response", {}).get("data", {}).get("WorkID", ""))
+
+            return {
+                "result": "success",
+                "work_id": work_id,
+                "message": f"申請が完了しました" + (f"（申請番号: {work_id}）" if work_id else "")
+            }
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8") if e.fp else str(e)
+            logger.error(f"ARS flow {flow_id} error: {e.code} - {err_body}")
+            raise HTTPException(status_code=500, detail=f"ARS処理に失敗しました: {err_body}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Submit action failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"申請処理に失敗しました: {str(e)}")
