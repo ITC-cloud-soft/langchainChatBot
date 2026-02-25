@@ -24,6 +24,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useNovuNotifications } from '../hooks/useNovuNotifications';
 import { useSnackbar } from 'notistack';
+import ApprovalFormDialog from './ApprovalFormDialog';
+import { authService } from '../services/authService';
 
 interface NotificationBellProps {
   userId: string;
@@ -34,6 +36,8 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const [open, setOpen] = useState(false);
+  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState<any>(null);
 
   const {
     notifications,
@@ -151,8 +155,10 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
   const renderNotificationItem = useCallback(
     (item: any) => {
       const isUnread = !item.read;
-      const isWorkflowRequest = item.payload?.type === 'workflow_request';
-      const hasButtons = item.payload?.buttons && item.payload.buttons.length > 0;
+      const isWorkflowRequest = item.payload?.notificationType === 'ssflow_approval' || item.payload?.type === 'workflow_request';
+      const isResultNotification = item.payload?.notificationType === 'ssflow_result';
+      const ctaButtons = item.cta?.action?.buttons;
+      const hasButtons = ctaButtons && ctaButtons.length > 0;
 
       return (
         <ListItem
@@ -221,109 +227,137 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
                     fontSize: '0.95rem',
                   }}
                 >
-                  {item.payload?.title || item.content}
+                  {isResultNotification
+                    ? (item.payload?.title || `【${item.payload?.actionLabel || '結果'}】${item.payload?.flowName || ''}`)
+                    : (item.payload?.flowName || item.payload?.title || '承認リクエスト')}
                 </Typography>
               </Box>
             }
             secondary={
               <Box>
-                <Typography 
-                  variant="body2" 
-                  color="text.secondary" 
-                  sx={{ 
-                    mb: 1.5,
-                    lineHeight: 1.6,
-                    fontSize: '0.875rem',
-                  }}
-                >
-                  {item.payload?.content || ''}
-                </Typography>
+                {/* メッセージ本文 */}
+                {(item.payload?.content || item.content) && (
+                  <Box
+                    sx={{
+                      px: 1.5,
+                      py: 1,
+                      mb: 1,
+                      bgcolor: isWorkflowRequest ? 'rgba(25,118,210,0.05)' : 'transparent',
+                      borderLeft: isWorkflowRequest ? '3px solid' : 'none',
+                      borderColor: 'primary.main',
+                      borderRadius: isWorkflowRequest ? '0 4px 4px 0' : 0,
+                    }}
+                  >
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ lineHeight: 1.6, fontSize: '0.875rem', whiteSpace: 'pre-line' }}
+                    >
+                      {item.payload?.content || item.content}
+                    </Typography>
+                  </Box>
+                )}
 
-                {/* ワークフロー情報 */}
-                {isWorkflowRequest && item.payload?.workflowData && (
+                {/* 申請者コメント */}
+                {isWorkflowRequest && item.payload?.comment && (
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, mb: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 56, pt: 0.1 }}>
+                      コメント:
+                    </Typography>
+                    <Typography variant="caption" sx={{ whiteSpace: 'pre-line', color: 'text.primary' }}>
+                      {item.payload.comment}
+                    </Typography>
+                  </Box>
+                )}
+
+                {/* 申請番号 */}
+                {isWorkflowRequest && item.payload?.arsParams?.WorkID && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 56 }}>
+                      申請番号:
+                    </Typography>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                      {item.payload.arsParams.WorkID}
+                    </Typography>
+                  </Box>
+                )}
+
+                {/* 承認・否認結果通知の詳細情報 */}
+                {isResultNotification && (
                   <Box
                     sx={{
                       p: 1.5,
-                      bgcolor: 'background.paper',
+                      bgcolor: item.payload?.actionType === 'approve'
+                        ? 'rgba(76, 175, 80, 0.06)'
+                        : 'rgba(244, 67, 54, 0.06)',
                       border: '1px solid',
-                      borderColor: 'divider',
+                      borderColor: item.payload?.actionType === 'approve'
+                        ? 'rgba(76, 175, 80, 0.3)'
+                        : 'rgba(244, 67, 54, 0.3)',
                       borderRadius: 2,
-                      fontSize: '0.8rem',
-                      mb: 1.5,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                      mb: 1,
                     }}
                   >
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 60 }}>
-                          WorkID:
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: 'primary.main', fontWeight: 500 }}>
-                          {item.payload.workflowData.WorkID}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 60 }}>
-                          フロー:
-                        </Typography>
-                        <Typography variant="caption">
-                          {item.payload.workflowData.FlowName}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 60 }}>
-                          申請者:
-                        </Typography>
-                        <Typography variant="caption">
-                          {item.payload.workflowData.StarterName}
-                        </Typography>
-                      </Box>
+                      {item.payload?.approverName && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 64 }}>
+                            対応者:
+                          </Typography>
+                          <Typography variant="caption">{item.payload.approverName}</Typography>
+                        </Box>
+                      )}
+                      {item.payload?.workId && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 64 }}>
+                            申請番号:
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'primary.main' }}>{item.payload.workId}</Typography>
+                        </Box>
+                      )}
+                      {item.payload?.comment && (
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', minWidth: 64, pt: 0.1 }}>
+                            コメント:
+                          </Typography>
+                          <Typography variant="caption" sx={{ whiteSpace: 'pre-line' }}>{item.payload.comment}</Typography>
+                        </Box>
+                      )}
                     </Box>
                   </Box>
                 )}
 
-                {/* CTA ボタン - payload.buttons から取得 */}
-                {hasButtons && (
+                {/* CTA ボタン - ssflow_approval 通知は「詳細」1個に統一 */}
+                {hasButtons && isWorkflowRequest && (
                   <Box sx={{ display: 'flex', gap: 1, mt: 1.5, mb: 1 }}>
-                    {item.payload.buttons.map((button: any, index: number) => (
-                      <Button
-                        key={index}
-                        variant={button.type === 'primary' ? 'contained' : 'outlined'}
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const url = button.url;
-                          if (url) {
-                            if (url.startsWith('http')) {
-                              window.open(url, '_blank');
-                            } else {
-                              navigate(url);
-                            }
-                          }
-                          if (!item.read) {
-                            markAsRead(item._id);
-                          }
-                        }}
-                        sx={{
-                          flex: 1,
-                          textTransform: 'none',
-                          fontSize: '0.8rem',
-                          fontWeight: 500,
-                          py: 0.75,
-                          borderRadius: 1.5,
-                          boxShadow: button.type === 'primary' ? '0 2px 4px rgba(25, 118, 210, 0.2)' : 'none',
-                          '&:hover': {
-                            boxShadow: button.type === 'primary' 
-                              ? '0 4px 8px rgba(25, 118, 210, 0.3)' 
-                              : '0 2px 4px rgba(0, 0, 0, 0.1)',
-                            transform: 'translateY(-1px)',
-                          },
-                          transition: 'all 0.2s ease',
-                        }}
-                      >
-                        {button.content}
-                      </Button>
-                    ))}
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedNotification(item);
+                        setApprovalDialogOpen(true);
+                        if (!item.read) {
+                          markAsRead(item._id);
+                        }
+                      }}
+                      sx={{
+                        flex: 1,
+                        textTransform: 'none',
+                        fontSize: '0.8rem',
+                        fontWeight: 500,
+                        py: 0.75,
+                        borderRadius: 1.5,
+                        '&:hover': {
+                          boxShadow: '0 2px 4px rgba(25, 118, 210, 0.2)',
+                          transform: 'translateY(-1px)',
+                        },
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      詳細情報
+                    </Button>
                   </Box>
                 )}
 
@@ -441,6 +475,18 @@ export default function NotificationBell({ userId, onNotificationClick }: Notifi
           </Box>
         )}
       </Drawer>
+
+      {/* 承認・否認フォームダイアログ */}
+      <ApprovalFormDialog
+        open={approvalDialogOpen}
+        onClose={() => setApprovalDialogOpen(false)}
+        notification={selectedNotification}
+        backendUrl={import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'}
+        authToken={authService.getAccessToken() || ''}
+        onActionComplete={(action, message) => {
+          enqueueSnackbar(message, { variant: 'success' });
+        }}
+      />
     </>
   );
 }

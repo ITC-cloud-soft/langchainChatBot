@@ -1122,6 +1122,83 @@ app.add_middleware(
 
 ---
 
-**文档版本:** 1.0  
-**最后更新:** 2026-01-21  
+**文档版本:** 1.1  
+**最后更新:** 2026-02-24  
 **作者:** AI Assistant
+
+---
+
+## 2026-02-24 修正内容
+
+### 修正した問題と対応
+
+#### 1. Novu subscriber ID の修正
+
+**問題:** chatbot が内部 user_id（数字）を subscriber ID として使用していたため、SSFlow が送信する通知（社員番号をsubscriber IDとして使用）を受信できなかった。
+
+**修正ファイル:** `backend/api/controllers/notification_controller.py`
+
+```python
+# 修正前
+service.sync_subscriber(user_id=current_user.user_id, ...)
+
+# 修正後
+service.sync_subscriber(user_id=current_user.username, ...)  # usernameは社員番号
+```
+
+#### 2. MySQL 互換性の修正
+
+**問題:** `notification.py` が PostgreSQL 専用の UUID 型を使用していたため、MySQL で起動エラーが発生。
+
+**修正ファイル:** `backend/api/models/notification.py`
+
+```python
+# 修正前（PostgreSQL専用）
+id = Column(UUID(as_uuid=True), primary_key=True)
+
+# 修正後（MySQL互換）
+id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+```
+
+#### 3. 承認・否認ボタンの表示修正
+
+**問題:** `NotificationBell.tsx` がボタンを `item.payload.buttons` から参照していたが、Novu の実際のデータ構造は `item.cta.action.buttons` である。
+
+**修正ファイル:** `frontend/src/components/NotificationBell.tsx`
+
+```tsx
+// 修正前
+const hasButtons = item.payload?.buttons && item.payload.buttons.length > 0;
+
+// 修正後
+const ctaButtons = item.cta?.action?.buttons;
+const hasButtons = ctaButtons && ctaButtons.length > 0;
+```
+
+### SSFlow 側の Novu ワークフロー変更
+
+**新ワークフロー識別子:** `ssflow-approval-v2`（旧: `ssflow-approval`）
+
+**テンプレート（in_app content）:**
+
+```
+申請者：{{starterName}}
+コメント：{{comment}}
+フロー：{{flowName}}
+```
+
+**CTA ボタン:** 承認（primary）/ 否認（secondary）
+
+**申請者名:** `requesterMailName[0].Name`（SEI_KANJI + MEI_KANJI）を使用するよう修正
+
+### chatbot 通知センター表示（最終）
+
+```
+┌─────────────────────────────────┐
+│ 商品計画申請          （タイトル）│
+│ 申請者：恒川淳次                 │
+│ コメント：確認をお願いします      │
+│ フロー：商品計画申請             │
+│                                 │
+│ [ 承認 ]  [ 否認 ]              │
+└─────────────────────────────────┘

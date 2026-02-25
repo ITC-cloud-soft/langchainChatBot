@@ -5,7 +5,6 @@ import enum
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import Column, String, Text, DateTime, Enum as SQLEnum, JSON
-from sqlalchemy.dialects.postgresql import UUID
 import uuid
 
 from api.models.database import Base
@@ -23,20 +22,20 @@ class Notification(Base):
     __tablename__ = "notifications"
     
     # 主キー
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     
     # 関連ID
-    tenant_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    chatbot_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    connection_id = Column(UUID(as_uuid=True), nullable=True)
+    tenant_id = Column(String(36), nullable=True, index=True)
+    chatbot_id = Column(String(36), nullable=True, index=True)
+    connection_id = Column(String(36), nullable=True)
     
     # Novu関連
     novu_notification_id = Column(String(255), unique=True, nullable=True, index=True)
     novu_subscriber_id = Column(String(255), nullable=True, index=True)
     
     # ユーザー情報
-    sender_id = Column(UUID(as_uuid=True), nullable=True)
-    receiver_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    sender_id = Column(String(36), nullable=True)
+    receiver_id = Column(String(255), nullable=False, index=True)
     
     # 通知内容
     title = Column(String(255), nullable=False)
@@ -106,9 +105,9 @@ class NotificationSyncLog(Base):
     """通知同期ログテーブル"""
     __tablename__ = "notification_sync_log"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     novu_notification_id = Column(String(255), nullable=False, index=True)
-    local_notification_id = Column(UUID(as_uuid=True), nullable=True)
+    local_notification_id = Column(String(36), nullable=True)
     sync_direction = Column(String(20), nullable=False)  # 'to_novu' or 'from_novu'
     sync_status = Column(String(20), nullable=False, index=True)  # 'success' or 'failed'
     error_message = Column(Text, nullable=True)

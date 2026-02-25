@@ -61,3 +61,10 @@ class NotificationListResponse(BaseModel):
 class UnreadCountResponse(BaseModel):
     """未読数レスポンス"""
     unread: int
+
+
+class SSFlowApprovalActionRequest(BaseModel):
+    """SSFlow承認・否認アクションリクエスト"""
+    ars_params: Dict[str, Any] = Field(..., description="SSFlow arsParams")
+    action: str = Field(..., description="承認: approve / 否認: deny")
+    comment: Optional[str] = Field("", description="コメント")
