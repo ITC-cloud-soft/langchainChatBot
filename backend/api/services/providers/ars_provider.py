@@ -251,7 +251,7 @@ class ARSServiceProvider(ServiceProvider):
         OpenAI Function Calling形式のスキーマに変換
         
         Args:
-            tools: Flow定義リスト
+            tools: Flow定義のリスト
             
         Returns:
             Function Calling用スキーマ
@@ -292,7 +292,7 @@ class ARSServiceProvider(ServiceProvider):
         ReAct形式のプロンプトに変換
         
         Args:
-            tools: Flow定義リスト
+            tools: Flow定義のリスト
             
         Returns:
             ReAct用プロンプト文字列
@@ -314,10 +314,10 @@ class ARSServiceProvider(ServiceProvider):
                     prompt += f"  説明: {description}\n"
         
         prompt += "\n### 応答ルール\n\n"
-        prompt += "1. **フロー一覧の表示を求められた場合**（例：「フロー一覧」「どんなフローがある？」「利用できるフローを教えて」）:\n"
+        prompt += "1. **フロー一覧の表示を求められた場合**（例：「フロー一覧」「どんなフローがある？」「利用できる機能を教えて」）:\n"
         prompt += "   - 上記のフロー一覧をすべて会話形式で説明してください\n"
         prompt += "   - **JSONは返さないでください**\n\n"
-        prompt += "2. **特定のフロー実行を求められた場合**（例：「〇〇フローを実行して」「△△申請をしたい」）:\n"
+        prompt += "2. **特定のフロー実行を求められた場合**（例：「〇〇フローを実行して」「△△申請をしたい」「△△承認をしたい」）:\n"
         prompt += "   - 説明の後、以下のJSON形式を返してください:\n"
         prompt += "```json\n"
         prompt += '{\n'
@@ -327,9 +327,9 @@ class ARSServiceProvider(ServiceProvider):
         prompt += '}\n'
         prompt += "```\n\n"
         prompt += "3. **絶対禁止事項**:\n"
-        prompt += "   - `\"type\": \"tool\"` は使用禁止。必ず `\"type\": \"flow\"` を使用してください\n"
         prompt += "   - フロー一覧を求められた場合に特定のフローのJSONを返すことは禁止です\n"
         prompt += "   - 存在しないフローIDを使用することは禁止です\n"
+        prompt += "   - typeは必ず\"flow\"を使用してください\n"
         
         return prompt
     

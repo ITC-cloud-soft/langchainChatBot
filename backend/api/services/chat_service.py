@@ -725,7 +725,7 @@ class ChatService(BaseService):
                         self.log_info(f"[ARS REACT] Detected flow ID {flow_id}, fetching params")
                         
                         try:
-                            # 获取Flow的参数定义
+                            # Flowのパラメータ定義を取得
                             from api.services.providers.ars_provider import ARSServiceProvider
                             import os
 
@@ -735,7 +735,7 @@ class ChatService(BaseService):
 
                             context = {"ars_token": ars_token}
 
-                            # 获取Flow名称
+                            # Flow名称を取得
                             flows = await provider.get_tools(context)
                             flow_name = None
                             for flow in flows:
@@ -743,7 +743,7 @@ class ChatService(BaseService):
                                     flow_name = flow.get("name")
                                     break
 
-                            # 获取参数定义
+                            # パラメータ定義を取得
                             params_result = await provider.get_flow_params(flow_id, context)
 
                             if params_result.get("success"):
