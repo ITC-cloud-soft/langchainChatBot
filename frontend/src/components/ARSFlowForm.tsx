@@ -269,6 +269,13 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
     );
 
     if (accordion) {
+      // 申請内容グループ内のフィールドにエラーがあるか確認
+      const MAINTBL_ERROR_FIELDS = [
+        'COMMENT', 'content_name', 'content_company', 'content_dept',
+        'AFFILIATION_KAISHACODE', 'AFFILIATION_BUSHOCODE',
+      ];
+      const hasInnerError = MAINTBL_ERROR_FIELDS.some(f => !!errors[f]);
+
       return (
         <Accordion
           key={param.api_param_name}
@@ -276,7 +283,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
           disableGutters
           sx={{
             boxShadow: 'none',
-            border: '1px solid #e0e0e0',
+            border: hasInnerError ? '1.5px solid #d32f2f' : '1px solid #e0e0e0',
             borderRadius: '8px !important',
             '&:before': { display: 'none' },
             backgroundColor: isReadonly ? '#f9f9f9' : '#ffffff',
@@ -290,9 +297,16 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
               '& .MuiAccordionSummary-content': { my: 0.5 },
             }}
           >
-            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-              {param.label || param.api_param_name}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: hasInnerError ? 'error.main' : 'text.secondary' }}>
+                {param.label || param.api_param_name}
+              </Typography>
+              {hasInnerError && (
+                <Typography variant="caption" sx={{ color: 'error.main', fontWeight: 500 }}>
+                  ⚠ 未入力または入力エラーがあります
+                </Typography>
+              )}
+            </Box>
           </AccordionSummary>
           <AccordionDetails sx={{ pt: 0, pb: 1.5, px: 1.5 }}>
             {childrenContent}
