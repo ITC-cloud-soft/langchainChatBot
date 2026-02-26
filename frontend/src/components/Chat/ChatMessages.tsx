@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { Box, Typography, Avatar, useTheme } from '@mui/material';
 import { Chat as ChatIcon } from '@mui/icons-material';
 import VirtualizedMessageList from '../VirtualizedMessageList';
@@ -19,6 +19,9 @@ interface ChatMessagesProps {
   estimatedItemSize?: number;
   onFlowExecuted?: (result: any) => void;
   onSendMessage?: (message: string) => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
 }
 
 export const ChatMessages: React.FC<ChatMessagesProps> = ({
@@ -29,6 +32,9 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
   estimatedItemSize = 120,
   onFlowExecuted,
   onSendMessage,
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
 }) => {
   const theme = useTheme();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -62,6 +68,14 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
       scrollToBottom();
     }
   }, [isLoading]);
+
+  // 上スクロール到達時に古いメッセージを追加ロード
+  const handleScroll = useCallback(() => {
+    if (!messagesContainerRef.current || !onLoadMore || !hasMore || isLoadingMore) return;
+    if (messagesContainerRef.current.scrollTop === 0) {
+      onLoadMore();
+    }
+  }, [onLoadMore, hasMore, isLoadingMore]);
 
   // メッセージがない場合の表示
   if (!messages || messages.length === 0) {
@@ -179,6 +193,7 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
   return (
     <Box
       ref={messagesContainerRef}
+      onScroll={handleScroll}
       sx={{
         flex: 1,
         minHeight: 0,
@@ -230,6 +245,16 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
         scrollBehavior: 'smooth',
       }}
     >
+      {isLoadingMore && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
+          <Typography variant="caption" color="text.secondary">読み込み中...</Typography>
+        </Box>
+      )}
+      {hasMore && !isLoadingMore && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.6 }}>↑ 上にスクロールして過去のメッセージを表示</Typography>
+        </Box>
+      )}
       {filteredMessages.map((message, index) => (
         <OptimizedChatMessage
           key={`${message.timestamp}-${index}`}

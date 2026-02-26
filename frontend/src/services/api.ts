@@ -116,6 +116,8 @@ interface ChatHistoryResponse {
   messages?: ChatMessage[];
   history?: ChatMessage[];
   total: number;
+  has_more?: boolean;
+  oldest_id?: number;
 }
 
 interface ClearChatHistoryResponse {
@@ -269,9 +271,13 @@ export const chatApi = {
     };
   },
 
-  getChatHistory: async (sessionId: string) => {
+  getChatHistory: async (sessionId: string, limit?: number, beforeId?: number) => {
+    const params = new URLSearchParams();
+    if (limit !== undefined) params.append('limit', limit.toString());
+    if (beforeId !== undefined) params.append('before_id', beforeId.toString());
+    const query = params.toString() ? `?${params.toString()}` : '';
     const response = await api.get<ApiResponse<ChatHistoryResponse>>(
-      `/api/chat/sessions/${sessionId}/history`,
+      `/api/chat/sessions/${sessionId}/history${query}`,
     );
     return response.data;
   },

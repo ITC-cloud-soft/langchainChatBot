@@ -201,12 +201,35 @@ async def stream_message(
 
 
 @router.get("/sessions/{session_id}/history")
-async def get_chat_history(session_id: str):
-    """Get chat history for a session"""
+async def get_chat_history(
+    session_id: str,
+    limit: Optional[int] = None,
+    before_id: Optional[int] = None,
+):
+    """Get chat history for a session (supports pagination)"""
+    from sqlalchemy.exc import NoResultFound
     try:
-        history = await chat_service.get_chat_history(session_id)
+        # limitが指定された場合は最新N件を取得（before_idより古いメッセージをlimit件）
+        latest_first = limit is not None
+        result = await chat_history_service.get_session_history(
+            session_id=session_id,
+            limit=limit,
+            before_id=before_id,
+            latest_first=latest_first,
+        )
         return format_success_response(
-            data={"session_id": session_id, "history": history},
+            data={
+                "session_id": session_id,
+                "history": result["messages"],
+                "has_more": result.get("has_more", False),
+                "oldest_id": result.get("oldest_id"),
+            },
+            message="Chat history retrieved successfully"
+        )
+    except NoResultFound:
+        # セッションが存在しない場合は空の履歴を返す
+        return format_success_response(
+            data={"session_id": session_id, "history": [], "has_more": False, "oldest_id": None},
             message="Chat history retrieved successfully"
         )
     except Exception as e:

@@ -95,8 +95,43 @@ const ChatPage: React.FC = () => {
   const hasFormMessages = (messages || []).some(
     (msg: any) => msg.role === 'assistant' && msg.metadata?.params
   );
-  const useVirtualization = !hasFormMessages && messages.length > 30;
+  const useVirtualization = !hasFormMessages && messages.length > 50;
   const estimatedItemSize = 120;
+
+  // 古いメッセージの追加ロード用状態
+  const [hasMore, setHasMore] = useState(false);
+  const [oldestId, setOldestId] = useState<number | undefined>(undefined);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // 古いメッセージを追加ロードする関数
+  const loadMoreHistory = useCallback(async () => {
+    if (!sessionId || isLoadingMore || !hasMore || !oldestId) return;
+    setIsLoadingMore(true);
+    try {
+      const response = await chatApi.getChatHistory(sessionId, 10, oldestId);
+      const olderMessages = response.data.history || response.data.messages || [];
+      if (olderMessages.length > 0) {
+        const formatted = olderMessages.map((msg: any) => ({
+          id: msg.message_id || msg.id || `msg_${Date.now()}_${Math.random()}`,
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp,
+          message_id: msg.message_id,
+          metadata: msg.metadata,
+          sourceDocuments: msg.source_documents || msg.sourceDocuments,
+        }));
+        actions.setMessages([...formatted, ...(messages || [])]);
+        setHasMore(response.data.has_more ?? false);
+        setOldestId(response.data.oldest_id ?? undefined);
+      } else {
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error('Failed to load more history:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [sessionId, isLoadingMore, hasMore, oldestId, messages, actions]);
 
   // 状態をカスタムフックに分離して再レンダリングを最小化
   const chatPageState = useChatPageState();
@@ -260,23 +295,16 @@ const ChatPage: React.FC = () => {
     }
   }, []);
 
-  // チャット履歴をロードする関数
+  // 初期ロード：最新15件のみ取得
   const loadChatHistory = async (sessionId: string) => {
     try {
       actions.setLoading(true);
-      const response = await chatApi.getChatHistory(sessionId);
-      
-      console.log('[ChatPage] API response:', response);
-      console.log('[ChatPage] response.data:', response.data);
-      
-      // APIは "history" フィールドでメッセージを返す
-      const messages = response.data.history || response.data.messages || [];
-      
-      console.log('[ChatPage] messages from API:', messages);
-      console.log('[ChatPage] First message:', messages[0]);
-      
-      if (response.success && messages.length > 0) {
-        const historyMessages = messages.map((msg: any) => ({
+      const response = await chatApi.getChatHistory(sessionId, 10);
+
+      const msgs = response.data.history || response.data.messages || [];
+
+      if (response.success && msgs.length > 0) {
+        const historyMessages = msgs.map((msg: any) => ({
           id: msg.message_id || msg.id || `msg_${Date.now()}_${Math.random()}`,
           role: msg.role,
           content: msg.content,
@@ -285,18 +313,18 @@ const ChatPage: React.FC = () => {
           metadata: msg.metadata,
           sourceDocuments: msg.source_documents || msg.sourceDocuments,
         }));
-        
+
         actions.setMessages(historyMessages);
-        console.log('Loaded chat history:', historyMessages.length, 'messages');
-        console.log('Messages with metadata:', historyMessages.filter((m: any) => m.metadata).map((m: any) => ({
-          id: m.message_id,
-          role: m.role,
-          metadata: m.metadata
-        })));
-        console.log('Sample message structure:', historyMessages[0]);
+        setHasMore(response.data.has_more ?? false);
+        setOldestId(response.data.oldest_id ?? undefined);
+        console.log('Loaded chat history:', historyMessages.length, 'messages, has_more:', response.data.has_more);
       }
-    } catch (error) {
-      console.error('Failed to load chat history:', error);
+    } catch (error: any) {
+      // セッション未存在（404/500）は正常ケース（新規セッション）として無視
+      const status = error?.response?.status;
+      if (status !== 404 && status !== 500) {
+        console.error('Failed to load chat history:', error);
+      }
     } finally {
       actions.setLoading(false);
     }
@@ -330,6 +358,9 @@ const ChatPage: React.FC = () => {
             useVirtualization={useVirtualization}
             estimatedItemSize={estimatedItemSize}
             onSendMessage={handleSendDirectMessage}
+            onLoadMore={loadMoreHistory}
+            hasMore={hasMore}
+            isLoadingMore={isLoadingMore}
           />
         }
         input={

@@ -142,7 +142,9 @@ class ChatHistoryService:
         self,
         session_id: str,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
+        offset: Optional[int] = None,
+        before_id: Optional[int] = None,
+        latest_first: bool = False
     ) -> Dict[str, Any]:
         """Get chat history for a session"""
         try:
@@ -153,7 +155,10 @@ class ChatHistoryService:
                     raise NoResultFound(f"Session {session_id} not found")
                 
                 # Get messages
-                messages = await get_chat_messages_async(db_session, session_id, limit, offset)
+                messages = await get_chat_messages_async(
+                    db_session, session_id, limit, offset,
+                    before_id=before_id, latest_first=latest_first
+                )
                 
                 # Log metadata for debugging
                 for msg in messages:
@@ -161,15 +166,20 @@ class ChatHistoryService:
                         self.logger.info(f"Message {msg.message_id} metadata: {msg.message_metadata}")
                 
                 message_list = [msg.to_dict() for msg in messages]
-                
+
+                # has_more: limit指定かつ取得件数がlimitと等しい場合はさらに古いメッセージが存在する可能性あり
+                has_more = bool(limit and len(message_list) >= limit)
+
                 # Get metadata
                 metadata = await get_chat_metadata_async(db_session, session_id)
                 metadata_dict = metadata.to_dict() if metadata else {}
-                
+
                 return {
                     "session": session.to_dict(),
                     "messages": message_list,
-                    "metadata": metadata_dict
+                    "metadata": metadata_dict,
+                    "has_more": has_more,
+                    "oldest_id": message_list[0].get("id") if message_list else None,
                 }
                 
         except NoResultFound:

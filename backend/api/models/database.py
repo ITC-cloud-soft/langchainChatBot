@@ -307,18 +307,35 @@ async def get_chat_messages_async(
     db: AsyncSession, 
     session_id: str, 
     limit: Optional[int] = None,
-    offset: Optional[int] = None
+    offset: Optional[int] = None,
+    before_id: Optional[int] = None,
+    latest_first: bool = False
 ) -> list[ChatMessage]:
     """Get chat messages for a session (async version)"""
-    query = select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.timestamp.asc())
-    
+    query = select(ChatMessage).where(ChatMessage.session_id == session_id)
+
+    if before_id is not None:
+        query = query.where(ChatMessage.id < before_id)
+
+    if latest_first:
+        # 最新N件を取得するため降順で取得し、後で昇順に並び替える
+        query = query.order_by(ChatMessage.id.desc())
+    else:
+        query = query.order_by(ChatMessage.timestamp.asc())
+
     if limit:
         query = query.limit(limit)
     if offset:
         query = query.offset(offset)
-    
+
     result = await db.execute(query)
-    return result.scalars().all()
+    messages = result.scalars().all()
+
+    if latest_first:
+        # 降順で取得したものを昇順に戻す
+        messages = list(reversed(messages))
+
+    return messages
 
 
 async def get_chat_metadata_async(db: AsyncSession, session_id: str) -> Optional[ChatMetadata]:
