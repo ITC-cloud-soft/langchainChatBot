@@ -59,10 +59,13 @@ export const FlowResultDisplay: React.FC<FlowResultDisplayProps> = ({
   error,
 }) => {
   if (!success) {
+    const result_data_err = resultData?.result_data || {};
+    const errFlowNames = Object.keys(result_data_err);
+    const errDisplayName = errFlowNames.length > 0 ? errFlowNames[0] : `Flow ${flowId}`;
     return (
       <Alert severity="error" sx={{ mt: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold">
-          Flow {flowId} 実行失敗
+          {errDisplayName} 実行失敗
         </Typography>
         <Typography variant="body2" sx={{ mt: 1 }}>
           {error || '不明なエラーが発生しました'}
@@ -73,12 +76,13 @@ export const FlowResultDisplay: React.FC<FlowResultDisplayProps> = ({
 
   const result_data = resultData?.result_data || {};
   const flowNames = Object.keys(result_data);
+  const displayName = flowNames.length > 0 ? flowNames[0] : `Flow ${flowId}`;
 
   if (flowNames.length === 0) {
     return (
       <Alert severity="success" sx={{ mt: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold">
-          Flow {flowId} 実行成功!
+          {displayName} 実行成功!
         </Typography>
       </Alert>
     );
@@ -88,7 +92,7 @@ export const FlowResultDisplay: React.FC<FlowResultDisplayProps> = ({
     <Box sx={{ mt: 2 }}>
       <Alert severity="success" icon={<CheckCircleIcon />} sx={{ mb: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold">
-          Flow {flowId} 実行成功!
+          {displayName} 実行成功!
         </Typography>
       </Alert>
 
