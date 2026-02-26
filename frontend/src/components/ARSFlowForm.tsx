@@ -128,13 +128,46 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
-    
+
+    // paramsのrequiredチェック（既存ロジック）
     params.forEach(param => {
       if (param.required && !formValues[param.api_param_name]) {
-        newErrors[param.api_param_name] = `${param.api_param_name}は必須です`;
+        newErrors[param.api_param_name] = `${param.label || param.api_param_name}は必須です`;
       }
     });
-    
+
+    // 申請内容（COMMENT）必須チェック
+    const comment = (formValues['COMMENT'] || '').toString().trim();
+    if (!comment) {
+      newErrors['COMMENT'] = '申請内容を入力してください';
+    }
+
+    // 申請サマリー（氏名・会社名・所属）必須チェック
+    if (!(formValues['content_name'] || '').toString().trim()) {
+      newErrors['content_name'] = '氏名は必須です';
+    }
+    if (!(formValues['content_company'] || '').toString().trim()) {
+      newErrors['content_company'] = '会社名称は必須です';
+    }
+    if (!(formValues['content_dept'] || '').toString().trim()) {
+      newErrors['content_dept'] = '所属は必須です';
+    }
+
+    // 所属情報（KAISHACODE・BUSHOCODE）必須 + 数字のみチェック
+    const kaishaCode = (formValues['AFFILIATION_KAISHACODE'] || '').toString().trim();
+    if (!kaishaCode) {
+      newErrors['AFFILIATION_KAISHACODE'] = '会社コードは必須です';
+    } else if (!/^\d+$/.test(kaishaCode)) {
+      newErrors['AFFILIATION_KAISHACODE'] = '会社コードは数字のみ入力してください';
+    }
+
+    const bushoCode = (formValues['AFFILIATION_BUSHOCODE'] || '').toString().trim();
+    if (!bushoCode) {
+      newErrors['AFFILIATION_BUSHOCODE'] = '部署コードは必須です';
+    } else if (!/^\d+$/.test(bushoCode)) {
+      newErrors['AFFILIATION_BUSHOCODE'] = '部署コードは数字のみ入力してください';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
