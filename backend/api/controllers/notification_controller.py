@@ -20,7 +20,7 @@ from api.schemas.notification import (
     SSFlowApprovalActionRequest,
     SSFlowSubmitActionRequest
 )
-from api.models.user import get_ars_token_by_user
+from api.services.ars_service import ArsService
 from api.services.ssflow_utils import FK_FLOW_TO_TABLE as _FK_FLOW_TO_TABLE, CCFLOW_FLOW_MAPPING as _CCFLOW_FLOW_MAPPING, build_maintblname_value as _build_maintblname_value
 from pydantic import BaseModel
 import os
@@ -326,12 +326,8 @@ async def approval_action(
         # ARS flow ID 8 経由で処理
         ars_endpoint = os.environ.get("ARS_API_ENDPOINT", "http://ars-backend:5050")
 
-        # ユーザーのARS APIキーを取得
-        ars_token_obj = await get_ars_token_by_user(db, current_user.user_id)
-        if not ars_token_obj or not ars_token_obj.token:
-            raise HTTPException(status_code=400, detail="ARS APIキーが設定されていません。ARS設定画面でAPIキーを登録してください。")
-
-        ars_api_key = ars_token_obj.token
+        # ユーザーのARS APIキーを取得（共通メソッド）
+        ars_api_key = await ArsService.get_required_ars_token(db, current_user.user_id)
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # 事前チェック: 現在のノードが通知時と一致するか確認
@@ -500,11 +496,7 @@ async def submit_action(
 
         ars_endpoint = os.environ.get("ARS_API_ENDPOINT", "http://ars-backend:5050")
 
-        ars_token_obj = await get_ars_token_by_user(db, current_user.user_id)
-        if not ars_token_obj or not ars_token_obj.token:
-            raise HTTPException(status_code=400, detail="ARS APIキーが設定されていません。ARS設定画面でAPIキーを登録してください。")
-
-        ars_api_key = ars_token_obj.token
+        ars_api_key = await ArsService.get_required_ars_token(db, current_user.user_id)
 
         # コメントをフォームデータにマージ
         form_data = dict(request.form_data)

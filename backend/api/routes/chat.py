@@ -153,12 +153,11 @@ async def stream_message(
     else:
         default_logger.info(f"[ARS DEBUG] Skipping ARS prompt fetch - system_prompt: {bool(system_prompt)}, current_user: {bool(current_user)}")
     
-    # Get ARS token for flow execution
+    # Get ARS token for flow execution（共通メソッド）
     if current_user:
-        from api.models.user import get_ars_token_by_user
-        ars_token_obj = await get_ars_token_by_user(db, current_user.user_id)
-        if ars_token_obj:
-            ars_token = ars_token_obj.token
+        from api.services.ars_service import ArsService
+        ars_token = await ArsService.get_user_ars_token(db, current_user.user_id)
+        if ars_token:
             default_logger.info(f"[ARS DEBUG] ARS token retrieved for user {current_user.user_id}")
             
             # ARS Flow一覧を取得してsystem promptに追加

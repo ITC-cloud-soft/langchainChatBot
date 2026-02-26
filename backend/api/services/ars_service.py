@@ -94,6 +94,33 @@ class ArsService:
         if ars_token:
             return ars_token.token
         return None
+
+    @staticmethod
+    async def get_required_ars_token(db: AsyncSession, user_id: int) -> str:
+        """
+        ARS tokenを取得する共通メソッド（トークンが未設定の場合はHTTPExceptionを発生）
+        
+        全てのARS API呼び出し箇所で共通利用する。
+        
+        Args:
+            db: データベースセッション
+            user_id: ユーザーID
+            
+        Returns:
+            str: ARS APIトークン
+            
+        Raises:
+            HTTPException: トークンが未設定の場合（503）
+        """
+        from fastapi import HTTPException, status
+        
+        token = await ArsService.get_user_ars_token(db, user_id)
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="ARS token が設定されていません。ARS設定画面でAPIキーを登録してください。"
+            )
+        return token
     
     @staticmethod
     async def update_system_prompt_for_user(

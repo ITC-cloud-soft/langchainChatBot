@@ -27,6 +27,7 @@ from api.models.user import (
     get_user_by_id,
     create_user
 )
+from api.services.ars_service import ArsService
 
 router = APIRouter()
 
@@ -210,34 +211,55 @@ class EmployeeInfoResponse(BaseModel):
 async def get_employee_info(
     username: str = Query(..., description="社員番号（ユーザー名）"),
     current_user: Annotated[CurrentUser, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db_session),
 ):
     """
-    SSflow から社員情報を取得するプロキシエンドポイント。
-    フロントエンドは SSflow の URL を直接知らなくてよい。
+    ARS経由でSSflowから社員情報を取得するプロキシエンドポイント。
+    フロントエンドはSSflowのURLを直接知らなくてよい。
+    すべてのサードパーティAPI呼び出しはARS経由で行う。
     """
-    api_base = os.environ.get("EMPLOYEE_INFO_API_URL", "").rstrip("/")
-    if not api_base:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="EMPLOYEE_INFO_API_URL が設定されていません"
-        )
+    # ARS接続情報
+    ars_endpoint = os.environ.get("ARS_API_ENDPOINT", "http://ars-backend:5050").rstrip("/")
+    ARS_EMPLOYEE_INFO_FLOW_ID = 11
 
+    # 現在のユーザーのARS tokenをDBから取得（共通メソッド）
+    ars_token = await ArsService.get_required_ars_token(db, current_user.user_id)
+
+    # ARS経由でSSflow社員情報取得フローを実行
     api_prm = json.dumps({"SHAINBANGO": username}, ensure_ascii=False)
-    url = (
-        f"{api_base}/ssflow/WF/Comm/Handler.ashx"
-        f"?API_NAME=SSflow_GetEmployeeInfo_ByShainBango"
-        f"&NAMESPACE_NAME=saas-core"
-        f"&API_PRM={api_prm}"
-    )
+    url = f"{ars_endpoint}/execute"
+    payload = {
+        "type": "flow",
+        "id": ARS_EMPLOYEE_INFO_FLOW_ID,
+        "params": {
+            "API_PRM": api_prm
+        }
+    }
+    headers = {
+        "X-API-Key": ars_token,
+        "Content-Type": "application/json"
+    }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
         if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail="SSflow API エラー")
+            raise HTTPException(status_code=resp.status_code, detail="ARS API エラー")
 
-        data = resp.json()
-        info_list = data.get("Get_Info", [])
+        result = resp.json()
+        # ARSフローレスポンス: {"result_data": {"flow_name": [{"tool_name": {...}}]}, ...}
+        result_data = result.get("result_data", {})
+        # フロー結果からツール出力を抽出
+        flow_results = list(result_data.values())
+        if not flow_results:
+            return EmployeeInfoResponse()
+
+        steps = flow_results[0]  # [{"SSflow_GetEmployeeInfo": {...}}]
+        if not steps or not isinstance(steps, list):
+            return EmployeeInfoResponse()
+
+        tool_output = list(steps[0].values())[0] if steps[0] else {}
+        info_list = tool_output.get("Get_Info", [])
         if not info_list:
             return EmployeeInfoResponse()
 
@@ -257,7 +279,7 @@ async def get_employee_info(
     except httpx.RequestError as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"SSflow への接続に失敗しました: {e}"
+            detail=f"ARS への接続に失敗しました: {e}"
         )
 
 
