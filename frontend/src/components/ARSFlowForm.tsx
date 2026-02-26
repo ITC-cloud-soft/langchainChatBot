@@ -136,6 +136,12 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
       }
     });
 
+    // FK_Flow（申請フロー）必須チェック
+    const fkFlow = (formValues['FK_Flow'] || '').toString().trim();
+    if (!fkFlow) {
+      newErrors['FK_Flow'] = '申請フローを選択してください';
+    }
+
     // 申請内容（COMMENT）必須チェック
     const comment = (formValues['COMMENT'] || '').toString().trim();
     if (!comment) {
