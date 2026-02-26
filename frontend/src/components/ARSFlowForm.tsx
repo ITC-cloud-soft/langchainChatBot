@@ -573,7 +573,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
         p: 2.5,
         backgroundColor: isReadonly ? '#fafafa' : '#f5f5f5',
         borderRadius: 2,
-        maxWidth: 700,
+        width: '100%',
         opacity: isReadonly ? 0.9 : 1,
       }}
     >

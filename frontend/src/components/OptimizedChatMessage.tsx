@@ -156,9 +156,9 @@ const OptimizedChatMessage: React.FC<OptimizedChatMessageProps> = memo(({ messag
       >
         <Box
           sx={{
-            maxWidth: { xs: '85%', sm: '70%' },
+            maxWidth: { xs: '95%', sm: '80%', md: '75%' },
             minWidth: { xs: '150px', sm: '200px' },
-            width: 'fit-content',
+            width: '100%',
           }}
         >
           <ChatMessageWithForm
@@ -190,6 +190,11 @@ const OptimizedChatMessage: React.FC<OptimizedChatMessageProps> = memo(({ messag
         </Box>
       </Box>
     );
+  }
+
+  // EXECUTE_FLOWメッセージは表示しない
+  if (message.role === 'user' && message.content.startsWith('EXECUTE_FLOW:')) {
+    return null;
   }
 
   // ユーザーメッセージは通常通り表示

@@ -90,8 +90,12 @@ const ChatPage: React.FC = () => {
     onUpdateLastMessage: actions.updateLastMessage,
   });
 
-  // パフォーマンス最適化のためのフック
-  const useVirtualization = messages.length > 30;
+  // フォームを含むメッセージが存在する場合は仮想化を無効にする
+  // FixedSizeListは固定高さのため申請フォーム（可変高さ）と相性が悪く重叠が発生する
+  const hasFormMessages = (messages || []).some(
+    (msg: any) => msg.role === 'assistant' && msg.metadata?.params
+  );
+  const useVirtualization = !hasFormMessages && messages.length > 30;
   const estimatedItemSize = 120;
 
   // 状態をカスタムフックに分離して再レンダリングを最小化
