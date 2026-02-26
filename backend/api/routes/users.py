@@ -6,6 +6,9 @@ Admin users can manage all users.
 Regular users can only view their own information.
 """
 
+import os
+import json
+import httpx
 from typing import Annotated, List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -192,6 +195,72 @@ async def list_users(
     )
 
 
+class EmployeeInfoResponse(BaseModel):
+    """社員情報レスポンス"""
+    shainbango: Optional[str] = None
+    full_name: Optional[str] = None
+    company_code: Optional[str] = None
+    company_name: Optional[str] = None
+    department_name: Optional[str] = None
+    busho_code: Optional[str] = None
+    mail_address: Optional[str] = None
+
+
+@router.get("/employee-info", response_model=EmployeeInfoResponse)
+async def get_employee_info(
+    username: str = Query(..., description="社員番号（ユーザー名）"),
+    current_user: Annotated[CurrentUser, Depends(get_current_user)] = None,
+):
+    """
+    SSflow から社員情報を取得するプロキシエンドポイント。
+    フロントエンドは SSflow の URL を直接知らなくてよい。
+    """
+    api_base = os.environ.get("EMPLOYEE_INFO_API_URL", "").rstrip("/")
+    if not api_base:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="EMPLOYEE_INFO_API_URL が設定されていません"
+        )
+
+    api_prm = json.dumps({"SHAINBANGO": username}, ensure_ascii=False)
+    url = (
+        f"{api_base}/ssflow/WF/Comm/Handler.ashx"
+        f"?API_NAME=SSflow_GetEmployeeInfo_ByShainBango"
+        f"&NAMESPACE_NAME=saas-core"
+        f"&API_PRM={api_prm}"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail="SSflow API エラー")
+
+        data = resp.json()
+        info_list = data.get("Get_Info", [])
+        if not info_list:
+            return EmployeeInfoResponse()
+
+        info = info_list[0]
+        sei = info.get("SEI_KANJI", "")
+        mei = info.get("MEI_KANJI", "")
+        return EmployeeInfoResponse(
+            shainbango=info.get("SHAINBANGO"),
+            full_name=f"{sei}{mei}" if sei or mei else None,
+            company_code=info.get("KAISHACODE"),
+            company_name=info.get("KAISHAMEI"),
+            department_name=info.get("DEPARTNAME"),
+            # busho_code=info.get("SHOZOKUCODE"),
+            busho_code=info.get("BUSHOCODE"),
+            mail_address=info.get("MAILADDRESS"),
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"SSflow への接続に失敗しました: {e}"
+        )
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: int,
@@ -323,3 +392,5 @@ async def delete_user(
     await db.commit()
     
     return None
+
+

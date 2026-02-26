@@ -637,37 +637,29 @@ class ChatService(BaseService):
                             params = json.loads(params_json)
                             self.log_info(f"[ARS REACT] User submitted params for flow {flow_id}, message_id: {form_message_id}, params: {params}")
                             
-                            # FK_Flow が含まれる場合、SHAINBANGO/MainTblName 等を自動注入（notification_controller と同様）
-                            fk_flow = params.get("FK_Flow")
-                            if fk_flow and current_user_name:
-                                _FK_FLOW_TO_TABLE = {
-                                    "001": "TT_WF_MERCHANDISE_PLAN", "002": "TT_WF_ORDER",
-                                    "003": "TT_WF_ORDER_UNPLANNED", "004": "TT_WF_ARRIVAL_UNPLANNED",
-                                    "005": "TT_WF_ARRIVAL_RETURNS", "006": "TT_WF_MOVE_REQUEST",
-                                    "007": "TT_WF_STOCK_ADJUSTMENT", "008": "TT_WF_PRICE_CHANGE",
-                                    "009": "TT_WF_MREQ_ARRCORRECTION",
-                                }
-                                main_tbl_name = _FK_FLOW_TO_TABLE.get(fk_flow, "")
+
+                            # SHAINBANGO/UserNo は常に注入（FK_Flow 有無に関係なく）
+                            if current_user_name:
                                 params["SHAINBANGO"] = current_user_name
+                                params["UserNo"]     = current_user_name
+
+                            # FK_Flow が含まれる場合、MainTblName 等も自動注入
+                            fk_flow = params.get("FK_Flow")
+                            if fk_flow:
+                                from api.services.ssflow_utils import FK_FLOW_TO_TABLE, build_maintblname_value
+                                main_tbl_name = FK_FLOW_TO_TABLE.get(fk_flow, "")
                                 params["MainTblName"] = main_tbl_name
-                                if "MainTblName_value" not in params:
-                                    # SSFlow申請フォームの必須フィールドを含むデフォルト値
-                                    _affiliation_info = json.dumps({
-                                        "APPLICANT_AFFILIATION": {
-                                            "COMPANY": "00000",
-                                            "KAISHACODE": "3618",
-                                            "BUSHOCODE": "0008027040"
-                                        }
-                                    }, ensure_ascii=False)
-                                    _tbl_value = {
-                                        "AFFILIATION_INFO": _affiliation_info,
-                                        "COMMENT": "",
-                                        "SUMMRY": "",
-                                        "UPLOAD_FILES": ""
-                                    }
-                                    params["MainTblName_value"] = json.dumps(_tbl_value, ensure_ascii=False)
+                                # 展開フィールド or 未設定の場合、MainTblName_value を組み立て
+                                if "COMMENT" in params or "MainTblName_value" not in params:
+                                    params["MainTblName_value"] = build_maintblname_value(params)
                                 self.log_info(f"[ARS REACT] Injected SHAINBANGO={current_user_name}, MainTblName={main_tbl_name}")
-                            
+                            else:
+                                # FK_Flow なしでも MainTblName_value が展開フィールドを含む場合は組み立て
+                                if "COMMENT" in params or "MainTblName_value" not in params:
+                                    from api.services.ssflow_utils import build_maintblname_value
+                                    params["MainTblName_value"] = build_maintblname_value(params)
+                                self.log_info(f"[ARS REACT] Injected UserNo/SHAINBANGO={current_user_name} (no FK_Flow)")
+
                             # 更新表单状态为 'submitted'
                             if form_message_id and form_message_id != 'undefined':
                                 try:

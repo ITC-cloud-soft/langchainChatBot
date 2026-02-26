@@ -52,25 +52,48 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
   
   // ローカル状態が設定されている場合はそれを使用、なければmetadataから取得
   const formStatus = localFormStatus || metadata?.form_status || 'pending';
-  const savedFormData = localFormData || metadata?.form_data || {};
+  // form_dataにMainTblName_valueが含まれる場合は逆パースしてフォームフィールドに展開
+  const expandFormData = (raw: Record<string, any>): Record<string, any> => {
+    if (!raw?.MainTblName_value) return raw;
+    try {
+      const mv = typeof raw.MainTblName_value === 'string'
+        ? JSON.parse(raw.MainTblName_value)
+        : raw.MainTblName_value;
+      const result: Record<string, any> = { ...raw };
+      if (mv.COMMENT !== undefined)      result['COMMENT']       = mv.COMMENT;
+      if (mv.UPLOAD_FILES !== undefined) result['UPLOAD_FILES']  = mv.UPLOAD_FILES;
+      if (mv.FK_Flow !== undefined)      result['FK_Flow']       = mv.FK_Flow;
+      if (mv.SUMMRY) {
+        try {
+          const summry = typeof mv.SUMMRY === 'string' ? JSON.parse(mv.SUMMRY) : mv.SUMMRY;
+          if (summry.AgentMode !== undefined)        result['AgentMode']        = summry.AgentMode;
+          if (summry.AutoApprovalMode !== undefined) result['AutoApprovalMode'] = summry.AutoApprovalMode;
+          if (Array.isArray(summry.content)) {
+            summry.content.forEach((c: any) => {
+              if (c.name === '従業員氏名') result['content_name']    = c.value;
+              if (c.name === '社員番号')   result['content_empno']  = c.value;
+              if (c.name === '会社名称')   result['content_company']= c.value;
+              if (c.name === '所属')       result['content_dept']   = c.value;
+            });
+          }
+        } catch (_) {}
+      }
+      if (mv.AFFILIATION_INFO?.APPLICANT_AFFILIATION) {
+        const aff = mv.AFFILIATION_INFO.APPLICANT_AFFILIATION;
+        if (aff.COMPANY)    result['AFFILIATION_COMPANY']    = aff.COMPANY;
+        if (aff.KAISHACODE) result['AFFILIATION_KAISHACODE'] = aff.KAISHACODE;
+        if (aff.BUSHOCODE)  result['AFFILIATION_BUSHOCODE']  = aff.BUSHOCODE;
+      }
+      return result;
+    } catch (_) {
+      return raw;
+    }
+  };
+
+  const savedFormData = expandFormData(localFormData || metadata?.form_data || {});
   
-  console.log('[ChatMessageWithForm] Form data:', {
-    formStatus,
-    savedFormData,
-    savedFormData_json: JSON.stringify(savedFormData),
-    metadata_form_data: metadata?.form_data,
-    metadata_form_data_json: JSON.stringify(metadata?.form_data),
-    localFormData
-  });
 
   useEffect(() => {
-    console.log('[ChatMessageWithForm] useEffect triggered', { 
-      messageId, 
-      metadata, 
-      form_status: metadata?.form_status,
-      content_preview: content.substring(0, 100)
-    });
-    
     // 状態をリセット
     setFlowData(null);
     setExecutionResult(null);
@@ -78,11 +101,26 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
     
     // metadataにparams定義がある場合は、それを使用
     if (metadata?.params && metadata?.flow_id) {
-      console.log('[ChatMessageWithForm] Using params from metadata:', metadata.params);
+      // MainTblName_value.children に UPLOAD_FILES がない場合は動的に補完
+      const patchedParams = metadata.params.map((p: any) => {
+        if (p.api_param_name === 'MainTblName_value' && Array.isArray(p.children)) {
+          const hasUpload = p.children.some((c: any) => c.api_param_name === 'UPLOAD_FILES');
+          if (!hasUpload) {
+            return {
+              ...p,
+              children: [
+                ...p.children,
+                { api_param_name: 'UPLOAD_FILES', param_type: 'upload', label: '添付ファイル', required: false, default_value: '' }
+              ]
+            };
+          }
+        }
+        return p;
+      });
       setFlowData({
         flowId: metadata.flow_id,
         flowName: metadata.flow_name || `Flow ${metadata.flow_id}`,
-        params: metadata.params
+        params: patchedParams
       });
       return;
     }
@@ -177,7 +215,7 @@ export const ChatMessageWithForm: React.FC<ChatMessageWithFormProps> = ({
   // Flow参数フォームの場合
   if (flowData) {
     return (
-      <Box sx={{ mb: 2 }}>
+      <Box sx={{ mb: 2, minWidth: { sm: 520, md: 680 }, width: '100%' }}>
         <ARSFlowForm
           flowId={flowData.flowId}
           flowName={flowData.flowName}

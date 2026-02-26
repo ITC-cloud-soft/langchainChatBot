@@ -4,13 +4,16 @@
 
 export interface ARSParam {
   api_param_name: string;
-  param_type: 'text' | 'option' | 'number' | 'date' | 'file';
+  param_type: 'text' | 'textarea' | 'option' | 'number' | 'date' | 'file' | 'upload' | 'group' | 'summry_group' | 'affiliation_group';
+  label?: string;
+  auto?: boolean;
   option?: Array<{
     option_label: string;
     option_value: string;
   }>;
   required?: boolean;
   default_value?: any;
+  children?: ARSParam[];
 }
 
 export interface FormilySchema {

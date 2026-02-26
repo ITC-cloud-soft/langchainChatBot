@@ -21,6 +21,7 @@ from api.schemas.notification import (
     SSFlowSubmitActionRequest
 )
 from api.models.user import get_ars_token_by_user
+from api.services.ssflow_utils import FK_FLOW_TO_TABLE as _FK_FLOW_TO_TABLE, CCFLOW_FLOW_MAPPING as _CCFLOW_FLOW_MAPPING, build_maintblname_value as _build_maintblname_value
 from pydantic import BaseModel
 import os
 import json
@@ -34,26 +35,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# SSFlow FK_Flow → ARS Flow ID マッピング
-# Flow 10: 全ワークフロー共通申請テンプレート（tool 20→21）
-# ※ Flow 5 (001専用) / Flow 6 (005専用) は参照例として別途存在するが、こちらでは使用しない
-_CCFLOW_FLOW_MAPPING = {
-    "001": 10, "002": 10, "003": 10, "004": 10, "005": 10,
-    "006": 10, "007": 10, "008": 10, "009": 10,
-}
-
-# SSFlow FK_Flow → MainTblName マッピング（SSFlow DB WF_Flow.PTable より）
-_FK_FLOW_TO_TABLE = {
-    "001": "TT_WF_MERCHANDISE_PLAN",
-    "002": "TT_WF_ORDER",
-    "003": "TT_WF_ORDER_UNPLANNED",
-    "004": "TT_WF_ARRIVAL_UNPLANNED",
-    "005": "TT_WF_ARRIVAL_RETURNS",
-    "006": "TT_WF_MOVE_REQUEST",
-    "007": "TT_WF_STOCK_ADJUSTMENT",
-    "008": "TT_WF_PRICE_CHANGE",
-    "009": "TT_WF_MREQ_ARRCORRECTION",
-}
 
 
 async def _call_ars_flow(ars_endpoint: str, ars_api_key: str, flow_id: int, params: dict) -> dict:
@@ -528,12 +509,16 @@ async def submit_action(
         # コメントをフォームデータにマージ
         form_data = dict(request.form_data)
         if request.comment:
-            form_data["WFComment"] = request.comment
+            form_data["COMMENT"] = request.comment
+
+        # 展開フィールド（COMMENT, AgentMode, content_* 等）を MainTblName_value に組み立て
+        maintblname_value = _build_maintblname_value(form_data)
+
         params = {
             "SHAINBANGO":        current_user.username,
             "FK_Flow":           fk_flow,
             "MainTblName":       main_tbl_name,
-            "MainTblName_value": json.dumps(form_data, ensure_ascii=False),
+            "MainTblName_value": maintblname_value,
         }
 
         try:
