@@ -63,8 +63,8 @@ class TestUploadValidation:
             result.fail("不許可拡張子(.js)", f"expected 400, got {status}")
 
     def _test_oversize_file(self, token: str, result: TestResult):
-        """ファイルサイズ超過 (11MB) → 400"""
-        large_content = b"x" * (11 * 1024 * 1024)
+        """ファイルサイズ超過 (10.1MB, 上限10MB) → 400"""
+        large_content = b"x" * (10 * 1024 * 1024 + 1)  # 10MB+1byte（最小超過）
         status, body = http_upload(
             self.UPLOAD_PATH, token,
             filename="toobig.pdf",

@@ -27,7 +27,7 @@ from typing import Tuple
 # ──────────────────────────────────────────────
 # 共通設定
 # ──────────────────────────────────────────────
-BASE_URL  = os.getenv("TEST_BASE_URL", "http://localhost:8000")
+BASE_URL  = os.getenv("TEST_BASE_URL", "http://127.0.0.1:8000")
 TEST_USER = os.getenv("TEST_USER", "admin")
 TEST_PASS = os.getenv("TEST_PASS", "admin123")
 
@@ -44,7 +44,7 @@ def login(username: str = TEST_USER, password: str = TEST_PASS) -> str:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read())["access_token"]
 
 
@@ -56,7 +56,7 @@ def http_get(path: str, token: str) -> Tuple[int, dict]:
         method="GET",
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as e:
         try:
@@ -77,7 +77,7 @@ def http_post(path: str, body: dict, token: str) -> Tuple[int, dict]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as e:
         try:

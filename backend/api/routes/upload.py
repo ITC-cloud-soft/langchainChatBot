@@ -46,13 +46,29 @@ async def upload_file(
     - 許可拡張子: pdf / xls / xlsx / doc / docx / png / jpg / jpeg / zip
     """
     filename = file.filename or "unknown"
-    file_bytes = await file.read()
 
-    # バリデーション
+    # 拡張子バリデーション（読み込み前に検査）
     try:
-        validate_upload(filename, len(file_bytes))
+        validate_upload(filename, 0)  # サイズ0でまず拡張子だけ検査
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # ストリーミング読み込みでサイズ上限チェック（10MB）
+    MAX_SIZE = 10 * 1024 * 1024
+    chunks = []
+    total = 0
+    while True:
+        chunk = await file.read(64 * 1024)  # 64KB ずつ読む
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"ファイルサイズが上限 ({MAX_SIZE // (1024*1024)}MB) を超えています。",
+            )
+        chunks.append(chunk)
+    file_bytes = b"".join(chunks)
 
     # アップロード
     storage = get_storage_service()

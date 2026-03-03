@@ -21,8 +21,16 @@ logger = logging.getLogger(__name__)
 # 許可するファイル拡張子・最大サイズ
 # ──────────────────────────────────────────────
 ALLOWED_EXTENSIONS = {
-    "pdf", "xls", "xlsx", "doc", "docx",
-    "png", "jpg", "jpeg", "zip",
+    # ドキュメント
+    "pdf", "doc", "docx",
+    # スプレッドシート
+    "xls", "xlsx", "csv",
+    # 画像
+    "png", "jpg", "jpeg",
+    # テキスト・データ
+    "txt", "json", "xml", "md",
+    # 圧縮
+    "zip",
 }
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 
