@@ -1173,3 +1173,133 @@ class NotificationService:
 **文档版本:** 1.0  
 **最后更新:** 2026-01-21  
 **作者:** AI Assistant
+
+---
+
+## 最新実装内容（2026-02-25 更新）
+
+### 1. 通知カード表示改善（NotificationBell）
+
+**ファイル**: `frontend/src/components/NotificationBell.tsx`
+
+#### payload.content 優先表示の統一
+
+通知カードのメッセージ本文は `item.payload?.content` を優先表示するよう統一。
+表示判定と内容取得の優先順が不一致だった問題を修正。
+
+```typescript
+{(item.payload?.content || item.content) && (
+  <Typography variant="body2" ...>
+    {item.payload?.content || item.content}
+  </Typography>
+)}
+```
+
+#### 申請番号（WorkID）の追加表示
+
+ワークフロー承認リクエスト通知カードに申請番号を表示:
+
+```typescript
+{isWorkflowRequest && item.payload?.arsParams?.WorkID && (
+  <Box>
+    <Typography variant="caption" sx={{ fontWeight: 600 }}>
+      申請番号:
+    </Typography>
+    <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+      {item.payload.arsParams.WorkID}
+    </Typography>
+  </Box>
+)}
+```
+
+---
+
+### 2. 承認アクション 事前チェック・処理済み3分岐
+
+**ファイル**: `backend/api/controllers/notification_controller.py` → `approve_action()`
+
+承認/否認ボタン押下時、SSFlow API で現在の WFState を確認し、
+既に処理済みの場合は ARS 実行をスキップして詳細メッセージを返す。
+
+#### WFState の意味
+
+| WFState | 状態 |
+|---------|------|
+| 1 | 進行中 |
+| 3 | 完了（全承認済み） |
+| 4 | 取消/否認 |
+
+#### 3分岐のメッセージ
+
+```python
+# パターン1: WFState=3 or 4 + flowStatus="completed"
+msg = f"この申請は承認済みです。最終承認者：{last_sender}。フローは完了しています。"
+
+# パターン2: WFState=3 or 4 + flowStatus="denied"
+msg = f"この申請は否認されています。否認者：{last_sender}。"
+
+# パターン3: WFState=1（進行中）だが別の担当者が既に処理済み
+msg = f"この申請は既に処理済みです。承認者：{last_sender}。現在「{next_node}」ノードで承認待ちです。"
+```
+
+戻り値: `{"result": "already_processed", "message": "..."}`
+
+事前チェック失敗時（SSFlow API タイムアウト等）はログのみ出力し、承認処理は続行する。
+
+---
+
+### 3. ApprovalFormDialog コンポーネント（新規）
+
+**ファイル**: `frontend/src/components/ApprovalFormDialog.tsx`
+
+承認通知クリック時に表示されるダイアログコンポーネント。
+
+#### 主な機能
+
+- フロー名・申請番号・申請者情報を表示
+- 承認/否認ボタン（コメント入力付き）
+- 承認・否認後の結果表示（already_processed 含む）
+
+#### 表示フロー
+
+```
+通知クリック (workflow_request)
+    ↓
+ApprovalFormDialog 表示
+    ├─ 承認ボタン → POST /notifications/approve-action → ARS Flow 8 実行
+    ├─ 否認ボタン → POST /notifications/approve-action (action=deny)
+    └─ 既処理の場合 → already_processed メッセージ表示
+```
+
+---
+
+### 4. ARS Token 取得の共通化
+
+**ファイル**: `backend/api/services/ars_service.py`
+
+`ArsService.get_required_ars_token()` を追加し、全 ARS API 呼び出し箇所で共通利用:
+
+```python
+@staticmethod
+async def get_required_ars_token(db: AsyncSession, user_id: int) -> str:
+    """
+    トークンが未設定の場合は HTTP 503 を発生させる共通メソッド
+    """
+    token = await ArsService.get_user_ars_token(db, user_id)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ARS token が設定されていません。ARS設定画面でAPIキーを登録してください。"
+        )
+    return token
+```
+
+統一した呼び出し箇所:
+- `notification_controller.py` (approve_action / submit_action)
+- `chat.py` ルート
+- `users.py` (employee-info)
+
+---
+
+**ドキュメントバージョン**: 2.0  
+**最終更新**: 2026-02-25

@@ -284,11 +284,87 @@ Body: {
 4. **透明性**: 展示每个Tool的执行状态和结果
 5. **可扩展**: 易于添加新的参数类型
 
-## 后续改进方向
+## フロントエンド表単UIの実装（完了）
 
-1. **前端表单UI**: 实现可视化参数输入界面
-2. **参数验证**: 添加前端和后端参数验证
-3. **参数默认值**: 支持参数默认值
-4. **文件上传**: 支持file类型参数
-5. **执行历史**: 保存参数历史,方便重复使用
-6. **条件参数**: 根据其他参数值动态显示/隐藏参数
+### ARSFlowForm コンポーネント
+**ファイル**: `frontend/src/components/ARSFlowForm.tsx`
+
+テキスト入力・プルダウン・ファイルアップロードを含む MUI ベースの動的フォームコンポーネント。
+
+#### 自動入力フィールド
+ログインユーザー情報および ARS Flow 11 経由の社員情報を自動セット:
+
+```typescript
+// ARS API 経由で社員情報を取得
+const res = await fetch(
+  `${API_BASE}/api/users/employee-info?username=${encodeURIComponent(user.username)}`,
+  { headers: { Authorization: `Bearer ${token}` } }
+);
+// content_name / content_company / content_dept
+// AFFILIATION_KAISHACODE / AFFILIATION_BUSHOCODE を自動入力
+```
+
+自動セットされるフィールド（hidden）:
+- `content_empno`: ログインユーザー名（社員番号）
+- `AgentMode`: `'0'`（固定）
+- `AutoApprovalMode`: `'N'`（固定）
+
+#### バリデーション
+送信ボタン押下時に以下を検証:
+
+| フィールド | ルール |
+|---|---|
+| `FK_Flow` | 必須（申請フローを選択してください） |
+| `COMMENT` | 必須 |
+| `content_name` | 必須（氏名） |
+| `content_company` | 必須（会社名称） |
+| `content_dept` | 必須（所属） |
+| `AFFILIATION_KAISHACODE` | 必須 + `/^\d+$/`（数字のみ） |
+| `AFFILIATION_BUSHOCODE` | 必須 + `/^\d+$/`（数字のみ） |
+| `UPLOAD_FILES` | 任意 |
+
+#### MainTblName_value 組み立て
+送信前に `assembleMaintblnameValue()` でフィールドを JSON 構造に変換:
+
+```typescript
+result['MainTblName_value'] = JSON.stringify({
+  COMMENT:          formValues['COMMENT'],
+  SUMMRY:           JSON.stringify({ AgentMode, AutoApprovalMode, content: [...] }),
+  AFFILIATION_INFO: { APPLICANT_AFFILIATION: { KAISHACODE, BUSHOCODE, ... } },
+  UPLOAD_FILES:     formValues['UPLOAD_FILES'] || '[]',
+});
+```
+
+CORP_NAME / DEPART_NAME / KANZI_NAME / EMPLOYEE_NO は SSFlow 側の `AddEmployeeInfo` が自動設定するため送信値から除外。
+
+#### 申請内容アコーディオン UI（折りたたみ）
+`MainTblName_value` グループは MUI `Accordion` でデフォルト閉じ状態:
+- バリデーションエラー発生時: ボーダー赤 + ヘッダーに `⚠ 未入力または入力エラーがあります` を赤字表示
+- 折りたたみ状態でもエラーを視覚的に確認可能
+
+#### フォーム入力値の保持（submitted 状態）
+`ChatMessageWithForm` コンポーネントの `expandFormData()` にて、
+submitted 状態の `form_data` から `MainTblName_value` を逆パースし、
+再表示時にフォームフィールドへ展開して入力値を復元。
+
+#### フォーム状態管理（FormStatus）
+```typescript
+type FormStatus = 'pending' | 'submitted' | 'cancelled';
+```
+- `pending`: 入力可能
+- `submitted` / `cancelled`: 読み取り専用表示（フィールド disabled）
+
+### FlowResultDisplay コンポーネント
+**ファイル**: `frontend/src/components/FlowResultDisplay.tsx`
+
+実行結果の表示改善: `result_data` のキー（フロー名）を優先表示。
+`result_data` が空の場合は `Flow {id}` にフォールバック。
+
+---
+
+## 後続改善方向
+
+1. **パラメータデフォルト値**: 設定画面からのデフォルト値プリセット対応
+2. **ファイルアップロード強化**: 複数ファイル・進捗表示
+3. **実行履歴**: パラメータ入力履歴の保存と再利用
+4. **条件パラメータ**: 他パラメータ値に基づく動的表示/非表示
