@@ -39,6 +39,9 @@ bcrypt==4.2.1
 # File handling
 aiofiles==24.1.0
 
+# Object storage (MinIO / S3 / Azure Blob)
+boto3==1.35.99
+
 # Utilities
 tenacity==8.2.3
 nest-asyncio==1.6.0

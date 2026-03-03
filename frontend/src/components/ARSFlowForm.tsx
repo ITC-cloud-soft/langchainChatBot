@@ -57,6 +57,7 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
 
   // ログインユーザー情報 + SSflowプロキシAPIで社員情報を自動セット
   useEffect(() => {
@@ -335,52 +336,112 @@ export const ARSFlowForm: React.FC<ARSFlowFormProps> = ({
     const { api_param_name, label } = param;
     const displayLabel = label || api_param_name;
     const rawVal = formValues[api_param_name];
-    // 選択済みファイルリストを state で管理（文字列配列として保持）
-    let fileNames: string[] = [];
-    try {
-      fileNames = rawVal ? JSON.parse(rawVal) : [];
-      if (!Array.isArray(fileNames)) fileNames = [];
-    } catch (_) { fileNames = []; }
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files) return;
-      const newNames = Array.from(e.target.files).map(f => f.name);
-      const merged = [...fileNames, ...newNames.filter(n => !fileNames.includes(n))];
-      handleChange(api_param_name, JSON.stringify(merged));
+    // { name, url } オブジェクト配列として管理（後方互換: 文字列配列も受け付ける）
+    type FileItem = { name: string; url: string };
+    let fileItems: FileItem[] = [];
+    try {
+      const parsed = rawVal ? JSON.parse(rawVal) : [];
+      if (Array.isArray(parsed)) {
+        fileItems = parsed.map((item: any) =>
+          typeof item === 'string' ? { name: item, url: '' } : item
+        );
+      }
+    } catch (_) { fileItems = []; }
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files || !isEditable) return;
+      const files = Array.from(e.target.files);
       e.target.value = '';
+
+      for (const file of files) {
+        if (fileItems.some(f => f.name === file.name)) continue;
+
+        setUploadingFiles(prev => [...prev, file.name]);
+        try {
+          const token = authService.getAccessToken();
+          const API_BASE = import.meta.env.VITE_API_URL || '';
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const res = await fetch(`${API_BASE}/api/upload/file`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+          });
+
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `Upload failed: ${res.status}`);
+          }
+          const data = await res.json() as FileItem;
+          fileItems = [...fileItems, { name: data.name, url: data.url }];
+          handleChange(api_param_name, JSON.stringify(fileItems));
+        } catch (err) {
+          console.error('[Upload] Error:', err);
+          setSubmitError(
+            err instanceof Error ? err.message : 'ファイルのアップロードに失敗しました'
+          );
+        } finally {
+          setUploadingFiles(prev => prev.filter(n => n !== file.name));
+        }
+      }
     };
 
     const handleRemove = (name: string) => {
-      handleChange(api_param_name, JSON.stringify(fileNames.filter(n => n !== name)));
+      handleChange(api_param_name, JSON.stringify(fileItems.filter(f => f.name !== name)));
     };
+
+    const isUploading = uploadingFiles.length > 0;
 
     return (
       <Box key={api_param_name}>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
           {displayLabel}
         </Typography>
-        <Button
-          component="label"
-          variant="outlined"
-          size="small"
-          disabled={!isEditable || submitting}
-          sx={{ borderRadius: 1.5, fontSize: '0.78rem' }}
-        >
-          📎 ファイルを選択
-          <input type="file" multiple hidden onChange={handleFileChange} />
-        </Button>
-        {fileNames.length > 0 && (
+        {isEditable && (
+          <Button
+            component="label"
+            variant="outlined"
+            size="small"
+            disabled={!isEditable || submitting || isUploading}
+            sx={{ borderRadius: 1.5, fontSize: '0.78rem' }}
+          >
+            {isUploading
+              ? <><CircularProgress size={12} sx={{ mr: 0.5 }} />アップロード中...</>
+              : '📎 ファイルを選択'
+            }
+            <input type="file" multiple hidden onChange={handleFileChange} />
+          </Button>
+        )}
+        {/* アップロード中ファイル表示 */}
+        {uploadingFiles.map(name => (
+          <Box key={`uploading-${name}`} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+            <CircularProgress size={10} />
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: 300 }}>
+              {name}
+            </Typography>
+          </Box>
+        ))}
+        {/* アップロード済みファイル一覧 */}
+        {fileItems.length > 0 && (
           <List dense disablePadding sx={{ mt: 0.5 }}>
-            {fileNames.map(name => (
-              <ListItem key={name} disableGutters sx={{ py: 0 }}>
+            {fileItems.map(item => (
+              <ListItem key={item.name} disableGutters sx={{ py: 0 }}>
                 <ListItemText
-                  primary={name}
-                  primaryTypographyProps={{ variant: 'caption', noWrap: true, sx: { maxWidth: 340 } }}
+                  primary={
+                    item.url
+                      ? <a href={item.url} target="_blank" rel="noreferrer"
+                          style={{ fontSize: '0.75rem', wordBreak: 'break-all' }}>
+                          🔗 {item.name}
+                        </a>
+                      : <Typography variant="caption" noWrap sx={{ maxWidth: 340 }}>{item.name}</Typography>
+                  }
                 />
                 {isEditable && (
                   <ListItemSecondaryAction>
-                    <IconButton size="small" onClick={() => handleRemove(name)} disabled={submitting}
-                      sx={{ p: 0.25 }}
+                    <IconButton size="small" onClick={() => handleRemove(item.name)}
+                      disabled={submitting || isUploading} sx={{ p: 0.25 }}
                     >
                       ✕
                     </IconButton>

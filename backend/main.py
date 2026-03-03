@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import routers
-from api.routes import chat, llm_config, knowledge, config, embedding_config, auth, users, ars_settings, internal_users
+from api.routes import chat, llm_config, knowledge, config, embedding_config, auth, users, ars_settings, internal_users, upload
 from api.controllers import notification_controller
 from api.core.config_manager import settings
 from api.core.config_watcher import config_updater
@@ -156,6 +156,9 @@ app.include_router(embedding_config.router, prefix="/api/embedding", tags=["embe
 app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(ars_settings.router, prefix="/api", tags=["ars-settings"])
+
+# File upload routes (require authentication)
+app.include_router(upload.router, prefix="/api/upload", tags=["upload"])
 
 # Mount static files for uploads
 if not os.path.exists(settings.UPLOAD_DIR):
