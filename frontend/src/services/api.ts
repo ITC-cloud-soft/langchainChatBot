@@ -672,6 +672,42 @@ export const configApi = {
   },
 };
 
+// File Upload API
+export interface UploadFileResponse {
+  name: string;
+  url: string;
+}
+
+export interface DownloadUrlResponse {
+  download_url: string;
+  expires_in_hours: number;
+}
+
+export const uploadFile = async (file: File): Promise<UploadFileResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await api.post('/api/upload/file', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+export const generateDownloadUrl = async (
+  blobName: string,
+  expiryHours: number = 1
+): Promise<DownloadUrlResponse> => {
+  const response = await api.get('/api/upload/download-url', {
+    params: {
+      blob_name: blobName,
+      expiry_hours: expiryHours,
+    },
+  });
+  return response.data;
+};
+
 // Auth token management functions
 export const setAuthToken = (token: string) => {
   localStorage.setItem('auth_token', token);

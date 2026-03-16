@@ -41,6 +41,8 @@ aiofiles==24.1.0
 
 # Object storage (MinIO / S3 / Azure Blob)
 boto3==1.35.99
+azure-storage-blob==12.19.0
+azure-identity==1.15.0
 
 # Utilities
 tenacity==8.2.3

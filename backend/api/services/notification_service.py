@@ -7,6 +7,8 @@ import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from api.adapters.novu_adapter import NovuAdapter
 from api.models.notification import Notification, NotificationStatus
@@ -186,7 +188,7 @@ class NotificationService:
             logger.error(f"Failed to send system notification: {str(e)}")
             raise
     
-    def list_notifications(
+    async def list_notifications(
         self,
         user_id: str,
         unread_only: bool = False,
@@ -194,7 +196,7 @@ class NotificationService:
         limit: int = 10
     ) -> Dict[str, Any]:
         """
-        通知リストを取得 (Novu Messages APIから直接取得)
+        通知リストを取得 (Novu Messages APIから直接取得し、ローカルDBのpayloadとマージ)
         
         Args:
             user_id: ユーザーID
@@ -228,6 +230,21 @@ class NotificationService:
                 # 未読のみフィルタ
                 if unread_only:
                     notifications = [n for n in notifications if not n.get("seen")]
+                
+                # ローカルDBからpayloadを取得してマージ（AsyncSession対応）
+                if isinstance(self.db, AsyncSession):
+                    for notification in notifications:
+                        transaction_id = notification.get("transactionId")
+                        if transaction_id:
+                            stmt = select(Notification).where(
+                                Notification.novu_notification_id == transaction_id
+                            )
+                            result_db = await self.db.execute(stmt)
+                            local_notif = result_db.scalar_one_or_none()
+                            
+                            if local_notif and local_notif.payload:
+                                # ローカルDBのpayloadでNovuのpayloadを上書き
+                                notification["payload"] = local_notif.payload
                 
                 return {
                     "data": notifications,
@@ -528,6 +545,7 @@ class NotificationService:
             "content": f"{starter_name}さんから{flow_name}の承認リクエストが届きました",
             "type": "workflow_request",
             "workflowData": workflow_data,
+            "arsParams": workflow_data,
             "workflowId": work_id,
             "buttons": [
                 {

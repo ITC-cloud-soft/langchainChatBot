@@ -83,7 +83,7 @@ async def list_notifications(
     - **limit**: 1ページあたりの件数 (1-100)
     """
     try:
-        result = service.list_notifications(
+        result = await service.list_notifications(
             user_id=current_user.username,
             unread_only=unread_only,
             page=page,
@@ -390,8 +390,12 @@ async def approval_action(
                     return {"result": "already_processed", "message": msg}
 
         except Exception as check_err:
-            # チェック失敗時はログのみ、処理は続行
-            logger.warning(f"ノード状態確認失敗（処理は続行）: {str(check_err)}")
+            # チェック失敗時は、ワークフローが完了済み（データ削除済み）と判断
+            logger.warning(f"ノード状態確認失敗（ワークフロー完了済みと判断）: {str(check_err)}")
+            return {
+                "result": "already_processed",
+                "message": "この申請は既に処理済みです。ワークフローデータが見つかりません。"
+            }
 
         # 承認: Mode=4, 否認: Mode=5
         mode = "4" if request.action == "approve" else "5"

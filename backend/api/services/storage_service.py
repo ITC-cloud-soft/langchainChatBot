@@ -20,19 +20,19 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 # 許可するファイル拡張子・最大サイズ
 # ──────────────────────────────────────────────
-ALLOWED_EXTENSIONS = {
-    # ドキュメント
-    "pdf", "doc", "docx",
-    # スプレッドシート
-    "xls", "xlsx", "csv",
-    # 画像
-    "png", "jpg", "jpeg",
-    # テキスト・データ
-    "txt", "json", "xml", "md",
-    # 圧縮
-    "zip",
-}
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+def _get_allowed_extensions() -> set:
+    """環境変数から許可する拡張子を取得"""
+    default_exts = "pdf,doc,docx,xls,xlsx,csv,png,jpg,jpeg,txt,json,xml,md,zip"
+    exts_str = os.getenv("ALLOWED_FILE_EXTENSIONS", default_exts)
+    return {ext.strip().lower() for ext in exts_str.split(",") if ext.strip()}
+
+def _get_max_file_size() -> int:
+    """環境変数から最大ファイルサイズ（バイト）を取得"""
+    max_mb = int(os.getenv("MAX_FILE_SIZE_MB", "10"))
+    return max_mb * 1024 * 1024
+
+ALLOWED_EXTENSIONS = _get_allowed_extensions()
+MAX_FILE_SIZE_BYTES = _get_max_file_size()
 
 
 def validate_upload(filename: str, size: int) -> None:
@@ -82,6 +82,24 @@ class StorageService(ABC):
 
         Returns:
             str: 公開アクセス可能な URL
+        """
+        ...
+
+    @abstractmethod
+    async def generate_download_url(
+        self,
+        blob_name: str,
+        expiry_hours: int = 1,
+    ) -> str:
+        """
+        ダウンロード用の一時 URL を生成する。
+
+        Args:
+            blob_name    : Blob 名（ファイルパス）
+            expiry_hours : 有効期限（時間）
+
+        Returns:
+            str: ダウンロード可能な URL
         """
         ...
 
@@ -178,6 +196,16 @@ class MinioStorageService(StorageService):
         logger.info(f"[MinIO] Uploaded: {url}")
         return url
 
+    async def generate_download_url(
+        self,
+        blob_name: str,
+        expiry_hours: int = 1,
+    ) -> str:
+        """MinIO は公開 URL なので、そのまま返す"""
+        url = f"{self.public_endpoint}/{self.bucket}/{blob_name}"
+        logger.info(f"[MinIO] Download URL: {url}")
+        return url
+
     async def health_check(self) -> bool:
         import asyncio
 
@@ -203,8 +231,13 @@ class AzuriteStorageService(StorageService):
     azure-storage-blob を使用。
 
     環境変数:
-      AZURITE_CONNECTION_STRING : 接続文字列
-      AZURITE_CONTAINER         : コンテナ名 (デフォルト: chatbot-uploads)
+      AZURE_CONNECTION_STRING   : 接続文字列（本番用）
+      AZURE_CONTAINER           : コンテナ名 (デフォルト: chatbot)
+      AZURE_STORAGE_ACCOUNT_URL : ストレージアカウント URL
+      
+      または開発環境用:
+      AZURITE_CONNECTION_STRING : 接続文字列（Azurite用）
+      AZURITE_CONTAINER         : コンテナ名
       AZURITE_PUBLIC_ENDPOINT   : ブラウザからアクセス可能なURL
     """
 
@@ -216,9 +249,10 @@ class AzuriteStorageService(StorageService):
     )
 
     def __init__(self) -> None:
-        self.conn_str        = os.getenv("AZURITE_CONNECTION_STRING", self._DEFAULT_CONN)
-        self.container       = os.getenv("AZURITE_CONTAINER", "chatbot-uploads")
-        self.public_endpoint = os.getenv("AZURITE_PUBLIC_ENDPOINT", "http://localhost:9010")
+        self.conn_str = os.getenv("AZURE_CONNECTION_STRING") or os.getenv("AZURITE_CONNECTION_STRING", self._DEFAULT_CONN)
+        self.container = os.getenv("AZURE_CONTAINER") or os.getenv("AZURITE_CONTAINER", "chatbot")
+        self.account_url = os.getenv("AZURE_STORAGE_ACCOUNT_URL", "http://localhost:9010")
+        self.is_production = bool(os.getenv("AZURE_CONNECTION_STRING"))
 
     async def upload_file(
         self,
@@ -227,12 +261,13 @@ class AzuriteStorageService(StorageService):
         content_type: str = "application/octet-stream",
     ) -> str:
         import asyncio
+        from datetime import datetime
 
         key = _unique_key(filename)
 
         def _upload():
             try:
-                from azure.storage.blob import BlobServiceClient
+                from azure.storage.blob import BlobServiceClient, ContentSettings
             except ImportError as e:
                 raise RuntimeError(
                     "azure-storage-blob が未インストールです。"
@@ -241,22 +276,77 @@ class AzuriteStorageService(StorageService):
 
             client = BlobServiceClient.from_connection_string(self.conn_str)
             container_client = client.get_container_client(self.container)
+            
             try:
                 container_client.create_container()
+                logger.info(f"[Azure] コンテナを作成しました: {self.container}")
             except Exception:
-                pass  # already exists
-            container_client.upload_blob(
-                name=key,
-                data=file_bytes,
-                content_settings={"content_type": content_type},
+                pass
+            
+            blob_client = container_client.get_blob_client(key)
+            blob_client.upload_blob(
+                file_bytes,
+                content_settings=ContentSettings(content_type=content_type),
                 overwrite=True,
             )
+            
+            return blob_client.url
 
-        await asyncio.get_event_loop().run_in_executor(None, _upload)
+        blob_url = await asyncio.get_event_loop().run_in_executor(None, _upload)
+        
+        backend_name = "Azure" if self.is_production else "Azurite"
+        logger.info(f"[{backend_name}] Uploaded: {blob_url}")
+        return blob_url
 
-        url = f"{self.public_endpoint}/devstoreaccount1/{self.container}/{key}"
-        logger.info(f"[Azurite] Uploaded: {url}")
-        return url
+    async def generate_download_url(
+        self,
+        blob_name: str,
+        expiry_hours: int = 1,
+    ) -> str:
+        """SAS URL を生成してダウンロード用の一時 URL を返す"""
+        import asyncio
+        from datetime import datetime, timedelta
+
+        def _generate():
+            try:
+                from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
+            except ImportError as e:
+                raise RuntimeError(
+                    "azure-storage-blob が未インストールです。"
+                ) from e
+
+            client = BlobServiceClient.from_connection_string(self.conn_str)
+            blob_client = client.get_blob_client(container=self.container, blob=blob_name)
+            
+            account_name = client.account_name
+            account_key = None
+            
+            for part in self.conn_str.split(';'):
+                if part.startswith('AccountKey='):
+                    account_key = part.split('=', 1)[1]
+                    break
+            
+            if not account_key:
+                logger.warning("[Azure] AccountKey not found, returning direct URL")
+                return blob_client.url
+            
+            sas_token = generate_blob_sas(
+                account_name=account_name,
+                container_name=self.container,
+                blob_name=blob_name,
+                account_key=account_key,
+                permission=BlobSasPermissions(read=True),
+                expiry=datetime.utcnow() + timedelta(hours=expiry_hours),
+            )
+            
+            sas_url = f"{blob_client.url}?{sas_token}"
+            return sas_url
+
+        sas_url = await asyncio.get_event_loop().run_in_executor(None, _generate)
+        
+        backend_name = "Azure" if self.is_production else "Azurite"
+        logger.info(f"[{backend_name}] Generated SAS URL (expires in {expiry_hours}h)")
+        return sas_url
 
     async def health_check(self) -> bool:
         import asyncio
@@ -265,10 +355,11 @@ class AzuriteStorageService(StorageService):
             try:
                 from azure.storage.blob import BlobServiceClient
                 client = BlobServiceClient.from_connection_string(self.conn_str)
-                list(client.list_containers())
+                list(client.list_containers(max_results=1))
                 return True
             except Exception as e:
-                logger.warning(f"[Azurite] health_check failed: {e}")
+                backend_name = "Azure" if self.is_production else "Azurite"
+                logger.warning(f"[{backend_name}] health_check failed: {e}")
                 return False
 
         return await asyncio.get_event_loop().run_in_executor(None, _check)

@@ -19,7 +19,11 @@ import {
   CheckCircle as ApproveIcon,
   Cancel as DenyIcon,
   Assignment as FormIcon,
+  InsertDriveFile as FileIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
+import { generateDownloadUrl } from '../services/api';
+import { FileInfo } from './FileUploadField';
 
 interface ApprovalFormDialogProps {
   open: boolean;
@@ -41,9 +45,10 @@ export default function ApprovalFormDialog({
   const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
 
   const payload = notification?.payload || {};
-  const arsParams = payload?.arsParams;
+  const arsParams = payload?.arsParams || payload?.workflowData;
   const createdAt = notification?._createdAt || notification?.createdAt;
   const formattedDate = createdAt
     ? new Date(createdAt).toLocaleString('ja-JP', {
@@ -52,9 +57,67 @@ export default function ApprovalFormDialog({
       })
     : null;
 
+  const getAttachedFiles = (): FileInfo[] => {
+    console.log('[ApprovalFormDialog] arsParams:', arsParams);
+    
+    if (!arsParams) {
+      console.log('[ApprovalFormDialog] arsParams is null/undefined');
+      return [];
+    }
+    
+    const files: FileInfo[] = [];
+    
+    Object.keys(arsParams).forEach(key => {
+      console.log(`[ApprovalFormDialog] Checking key: ${key}, value:`, arsParams[key]);
+      
+      if (key === 'UPLOAD_FILES') {
+        try {
+          let fileData = arsParams[key];
+          console.log('[ApprovalFormDialog] UPLOAD_FILES raw data:', fileData, 'type:', typeof fileData);
+          
+          if (typeof fileData === 'string') {
+            fileData = JSON.parse(fileData);
+            console.log('[ApprovalFormDialog] UPLOAD_FILES parsed:', fileData);
+          }
+          
+          if (Array.isArray(fileData)) {
+            console.log('[ApprovalFormDialog] Adding files:', fileData);
+            files.push(...fileData);
+          } else if (fileData && typeof fileData === 'object') {
+            console.log('[ApprovalFormDialog] Adding single file:', fileData);
+            files.push(fileData);
+          }
+        } catch (e) {
+          console.error(`[ApprovalFormDialog] ${key} のパースに失敗:`, e);
+        }
+      }
+    });
+    
+    console.log('[ApprovalFormDialog] Final files:', files);
+    return files;
+  };
+
+  const handleDownloadFile = async (file: FileInfo) => {
+    try {
+      setDownloadingFile(file.azureFileName);
+      setError(null);
+      
+      const response = await generateDownloadUrl(file.azureFileName, 1);
+      
+      window.open(response.download_url, '_blank');
+    } catch (e: any) {
+      console.error('ファイルダウンロードエラー:', e);
+      setError(`ファイルのダウンロードに失敗しました: ${e.message}`);
+    } finally {
+      setDownloadingFile(null);
+    }
+  };
+
+  const attachedFiles = getAttachedFiles();
+
   const handleAction = async (action: 'approve' | 'deny') => {
     if (!arsParams) {
-      setError('承認に必要なパラメーターが見つかりません（arsParams未設定）。SSFlowから再送信してください。');
+      setError('承認に必要なパラメーターが見つかりません。SSFlowから再送信してください。');
       return;
     }
 
@@ -236,6 +299,70 @@ export default function ApprovalFormDialog({
           </Box>
         </Box>
 
+        {/* 添付ファイル */}
+        {attachedFiles.length > 0 && (
+          <>
+            <Divider sx={{ my: 1.5 }} />
+            
+            <Box>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
+                添付ファイル ({attachedFiles.length})
+              </Typography>
+              
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {attachedFiles.map((file, index) => (
+                  <Box
+                    key={index}
+                    onClick={() => handleDownloadFile(file)}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      p: 1.5,
+                      bgcolor: 'grey.50',
+                      borderRadius: 1,
+                      border: '1px solid',
+                      borderColor: 'grey.200',
+                      cursor: downloadingFile === file.azureFileName ? 'wait' : 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        bgcolor: 'grey.100',
+                        borderColor: 'primary.main',
+                        transform: 'translateX(4px)',
+                      },
+                    }}
+                  >
+                    <FileIcon color="action" />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 500,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {file.fileName}
+                      </Typography>
+                      {file.fileSize && (
+                        <Typography variant="caption" color="text.secondary">
+                          {file.fileSize}
+                        </Typography>
+                      )}
+                    </Box>
+                    {downloadingFile === file.azureFileName ? (
+                      <CircularProgress size={20} />
+                    ) : (
+                      <DownloadIcon color="primary" />
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          </>
+        )}
+
         <Divider sx={{ mb: 2 }} />
 
         {/* コメント入力 */}
@@ -270,7 +397,7 @@ export default function ApprovalFormDialog({
             color="warning.main"
             sx={{ mt: 1, display: 'block' }}
           >
-            ※ この通知には承認パラメーター（arsParams）が含まれていません。SSFlowから再度申請を送信してください。
+            ※ この通知には承認パラメーターが含まれていません。SSFlowから再度申請を送信してください。
           </Typography>
         )}
       </DialogContent>
